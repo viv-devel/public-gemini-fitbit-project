@@ -1,0 +1,49 @@
+name: Deploy Fitbit Function to GCP
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'fitbit-api-logic/**'
+
+env:
+  PROJECT_ID: ${{ secrets.PROJECT_ID }}
+  FUNCTION_NAME: fitbit-auth-webhook
+  FUNCTION_REGION: asia-northeast1
+  SOURCE_DIR: fitbit-api-logic
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies (npm install)
+        run: |
+          cd ${{ env.SOURCE_DIR }}
+          npm install
+
+      - name: Authorize GCP
+        uses: 'google-github-actions/auth@v2'
+        with:
+          credentials_json: '${{ secrets.GCP_SA_KEY }}'
+
+      - name: Deploy Cloud Function using gcloud
+        run: |
+          gcloud functions deploy ${{ env.FUNCTION_NAME }} \
+            --gen2 \
+            --region=${{ env.FUNCTION_REGION }} \
+            --runtime=nodejs20 \
+            --source=${{ env.SOURCE_DIR }} \
+            --entry-point=fitbitWebhookHandler \
+            --trigger-http \
+            --allow-unauthenticated \
+            --set-env-vars=GCP_PROJECT=${{ env.PROJECT_ID }},FITBIT_REDIRECT_URI=${{ secrets.FITBIT_REDIRECT_URI }} \
+            --project=${{ env.PROJECT_ID }}
