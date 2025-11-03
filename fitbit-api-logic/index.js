@@ -176,14 +176,50 @@ async function processAndLogFoods(accessToken, nutritionData, userId) {
         createFoodParams.append('defaultFoodMeasurementUnitId', unitId);
         createFoodParams.append('defaultServingSize', food.amount);
         createFoodParams.append('calories', Math.round(food.calories_kcal || 0));
-        if (food.totalFat_g) createFoodParams.append('fat', food.totalFat_g);
-        if (food.saturatedFat_g) createFoodParams.append('saturatedFat', food.saturatedFat_g);
-        if (food.cholesterol_mg) createFoodParams.append('cholesterol', food.cholesterol_mg);
-        if (food.sodium_mg) createFoodParams.append('sodium', food.sodium_mg);
-        if (food.totalCarbohydrate_g) createFoodParams.append('carbs', food.totalCarbohydrate_g);
-        if (food.dietaryFiber_g) createFoodParams.append('fiber', food.dietaryFiber_g);
-        if (food.sugars_g) createFoodParams.append('sugars', food.sugars_g);
-        if (food.protein_g) createFoodParams.append('protein', food.protein_g);
+        
+        // Add required formType and description, with defaults from documentation
+        createFoodParams.append('formType', food.formType || 'DRY');
+        createFoodParams.append('description', food.description || `Logged via Gemini: ${food.foodName}`);
+
+        // Map food object keys to Fitbit API parameter names based on documentation
+        const nutritionMap = {
+            caloriesFromFat: 'caloriesFromFat',
+            totalFat_g: 'totalFat',
+            transFat_g: 'transFat',
+            saturatedFat_g: 'saturatedFat',
+            cholesterol_mg: 'cholesterol',
+            sodium_mg: 'sodium',
+            potassium_mg: 'potassium',
+            totalCarbohydrate_g: 'totalCarbohydrate',
+            dietaryFiber_g: 'dietaryFiber',
+            sugars_g: 'sugars',
+            protein_g: 'protein',
+            vitaminA_iu: 'vitaminA',
+            vitaminB6: 'vitaminB6',
+            vitaminB12: 'vitaminB12',
+            vitaminC_mg: 'vitaminC',
+            vitaminD_iu: 'vitaminD',
+            vitaminE_iu: 'vitaminE',
+            biotin_mg: 'biotin',
+            folicAcid_mg: 'folicAcid',
+            niacin_mg: 'niacin',
+            pantothenicAcid_mg: 'pantothenicAcid',
+            riboflavin_mg: 'riboflavin',
+            thiamin_mg: 'thiamin',
+            calcium_g: 'calcium',
+            copper_g: 'copper',
+            iron_mg: 'iron',
+            magnesium_mg: 'magnesium',
+            phosphorus_g: 'phosphorus',
+            iodine_mcg: 'iodine',
+            zinc_mg: 'zinc'
+        };
+
+        for (const [foodKey, apiParam] of Object.entries(nutritionMap)) {
+            if (food[foodKey] !== undefined && food[foodKey] !== null) {
+                createFoodParams.append(apiParam, food[foodKey]);
+            }
+        }
 
         const createFoodResponse = await fetch(`https://api.fitbit.com/1/user/${userId}/foods.json`, {
             method: 'POST',
@@ -193,7 +229,9 @@ async function processAndLogFoods(accessToken, nutritionData, userId) {
 
         if (!createFoodResponse.ok) {
             const errorData = await createFoodResponse.json();
-            throw new Error(`Failed to create food "${food.foodName}": ${errorData.errors[0].message}`);
+            console.error('Fitbit create food error response:', errorData);
+            const errorMessage = errorData.errors && errorData.errors[0] ? errorData.errors[0].message : 'Unknown error';
+            throw new Error(`Failed to create food "${food.foodName}": ${errorMessage}`);
         }
         const createdFoodData = await createFoodResponse.json();
         const foodId = createdFoodData.food.foodId;
@@ -215,7 +253,9 @@ async function processAndLogFoods(accessToken, nutritionData, userId) {
 
         if (!logFoodResponse.ok) {
             const errorData = await logFoodResponse.json();
-            throw new Error(`Failed to log food "${food.foodName}": ${errorData.errors[0].message}`);
+            console.error('Fitbit log food error response:', errorData);
+            const errorMessage = errorData.errors && errorData.errors[0] ? errorData.errors[0].message : 'Unknown error';
+            throw new Error(`Failed to log food "${food.foodName}": ${errorMessage}`);
         }
 
         console.log(`Successfully logged food: ${food.foodName} for user ${userId}`);
