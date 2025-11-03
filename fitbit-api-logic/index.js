@@ -175,7 +175,7 @@ async function processAndLogFoods(accessToken, nutritionData, userId) {
         createFoodParams.append('name', food.foodName);
         createFoodParams.append('defaultFoodMeasurementUnitId', unitId);
         createFoodParams.append('defaultServingSize', food.amount);
-        createFoodParams.append('calories', Math.round(food.calories_kcal || 0));
+        createFoodParams.append('calories', Math.round(food.calories || 0));
         
         // Add required formType and description, with defaults from documentation
         createFoodParams.append('formType', food.formType || 'DRY');
