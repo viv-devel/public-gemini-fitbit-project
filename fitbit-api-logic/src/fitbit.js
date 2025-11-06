@@ -1,5 +1,6 @@
 import fetch from 'node-fetch';
 import { Buffer } from 'buffer';
+import { AuthenticationError, ValidationError, FitbitApiError } from './errors.js';
 import { getTokensFromFirestore, saveTokensToFirestore } from './firebase.js';
 
 // OAuth flow redirect URI
@@ -30,7 +31,7 @@ export async function exchangeCodeForTokens(clientId, clientSecret, code, fireba
     const data = await response.json();
     if (!response.ok) {
         console.error('Fitbit token exchange error:', data);
-        throw new Error('Failed to exchange code for tokens.');
+        throw new FitbitApiError('Failed to exchange code for tokens.');
     }
     console.log('Code exchanged for tokens successfully.');
     // Save tokens to Firestore using the response's user_id and the passed firebaseUid
@@ -48,7 +49,7 @@ export async function exchangeCodeForTokens(clientId, clientSecret, code, fireba
 export async function refreshFitbitAccessToken(firebaseUid, clientId, clientSecret) {
     const currentTokens = await getTokensFromFirestore(firebaseUid);
     if (!currentTokens || !currentTokens.refreshToken) {
-        throw new Error(`No refresh token found for user ${firebaseUid}. Please re-authenticate.`);
+        throw new AuthenticationError(`No refresh token found for user ${firebaseUid}. Please re-authenticate.`);
     }
 
     const response = await fetch('https://api.fitbit.com/oauth2/token', {
@@ -66,7 +67,7 @@ export async function refreshFitbitAccessToken(firebaseUid, clientId, clientSecr
     const newTokens = await response.json();
     if (!response.ok) {
         console.error('Fitbit refresh token error:', newTokens);
-        throw new Error(`Fitbit API Refresh Error: ${newTokens.errors ? newTokens.errors[0].message : 'Unknown'}`);
+        throw new FitbitApiError(`Fitbit API Refresh Error: ${newTokens.errors ? newTokens.errors[0].message : 'Unknown'}`);
     }
 
     console.log(`Token refreshed for user ${firebaseUid}.`);
@@ -99,12 +100,12 @@ export async function processAndLogFoods(accessToken, nutritionData, fitbitUserI
     };
 
     if (!nutritionData.foods || !Array.isArray(nutritionData.foods) || nutritionData.foods.length === 0) {
-        throw new Error('Invalid input: "foods" array is missing or empty.');
+        throw new ValidationError('Invalid input: "foods" array is missing or empty.');
     }
 
     const logPromises = nutritionData.foods.map(async (food) => {
         if (!food.foodName || !food.amount || !food.unit) {
-            throw new Error(`Missing required field for food log: ${food.foodName || 'Unknown Food'}.`);
+            throw new ValidationError(`Missing required field for food log: ${food.foodName || 'Unknown Food'}.`);
         }
 
         const unitId = getUnitId(food.unit);
@@ -167,7 +168,7 @@ export async function processAndLogFoods(accessToken, nutritionData, fitbitUserI
             const errorData = await createFoodResponse.json();
             console.error('Fitbit create food error response:', errorData);
             const errorMessage = errorData.errors && errorData.errors[0] ? errorData.errors[0].message : 'Unknown error';
-            throw new Error(`Failed to create food "${food.foodName}": ${errorMessage}`);
+            throw new FitbitApiError(`Failed to create food "${food.foodName}": ${errorMessage}`);
         }
         const createdFoodData = await createFoodResponse.json();
         const foodId = createdFoodData.food.foodId;
@@ -191,7 +192,7 @@ export async function processAndLogFoods(accessToken, nutritionData, fitbitUserI
             const errorData = await logFoodResponse.json();
             console.error('Fitbit log food error response:', errorData);
             const errorMessage = errorData.errors && errorData.errors[0] ? errorData.errors[0].message : 'Unknown error';
-            throw new Error(`Failed to log food "${food.foodName}": ${errorMessage}`);
+            throw new FitbitApiError(`Failed to log food "${food.foodName}": ${errorMessage}`);
         }
 
         console.log(`Successfully logged food: ${food.foodName} for user ${fitbitUserId}`);

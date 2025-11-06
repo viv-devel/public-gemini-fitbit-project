@@ -1,4 +1,5 @@
 import admin from 'firebase-admin';
+import { AuthenticationError } from './errors.js';
 
 // Initialize Firebase Admin SDK
 // This check ensures that it's initialized only once.
@@ -20,14 +21,14 @@ const FITBIT_TOKENS_COLLECTION = 'fitbit_tokens';
  */
 export async function verifyFirebaseIdToken(idToken) {
     if (!idToken) {
-        throw new Error('ID token is required.');
+        throw new AuthenticationError('ID token is required.');
     }
     try {
         const decodedToken = await admin.auth().verifyIdToken(idToken);
         return decodedToken;
     } catch (error) {
         console.error('Error verifying Firebase ID token:', error);
-        throw new Error('Invalid ID token.');
+        throw new AuthenticationError('Invalid ID token.');
     }
 }
 
