@@ -8,6 +8,10 @@ on:
     paths:
       - 'fitbit-api-logic/**'
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   PROJECT_ID: ${{ secrets.PROJECT_ID }}
   FUNCTION_NAME: fitbit-auth-webhook
