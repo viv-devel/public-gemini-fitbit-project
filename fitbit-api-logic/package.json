@@ -6,7 +6,7 @@
   "main": "src/index.js",
   "scripts": {
     "start": "functions-framework --target=fitbitWebhookHandler",
-    "test": "cross-env GCP_PROJECT=test-project FITBIT_REDIRECT_URI=http://localhost:3000/oauth node --experimental-vm-modules node_modules/jest/bin/jest.js"
+    "test": "cross-env GCP_PROJECT=test-project FITBIT_REDIRECT_URI=http://localhost:3000/oauth jest"
   },
   "dependencies": {
     "@google-cloud/functions-framework": "^3.0.0",
@@ -15,7 +15,15 @@
     "node-fetch": "^3.3.2"
   },
   "devDependencies": {
+    "@babel/core": "^7.28.5",
+    "@babel/preset-env": "^7.28.5",
+    "babel-jest": "^30.2.0",
     "cross-env": "^10.1.0",
     "jest": "^30.2.0"
+  },
+  "jest": {
+    "transformIgnorePatterns": [
+      "/node_modules/(?!node-fetch|data-uri-to-buffer)/"
+    ]
   }
 }
