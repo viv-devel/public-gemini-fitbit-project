@@ -5,12 +5,17 @@
   "type": "module",
   "main": "src/index.js",
   "scripts": {
-    "start": "functions-framework --target=fitbitWebhookHandler"
+    "start": "functions-framework --target=fitbitWebhookHandler",
+    "test": "cross-env GCP_PROJECT=test-project FITBIT_REDIRECT_URI=http://localhost:3000/oauth node --experimental-vm-modules node_modules/jest/bin/jest.js"
   },
   "dependencies": {
     "@google-cloud/functions-framework": "^3.0.0",
     "@google-cloud/secret-manager": "^5.0.0",
     "firebase-admin": "^13.5.0",
     "node-fetch": "^3.3.2"
+  },
+  "devDependencies": {
+    "cross-env": "^10.1.0",
+    "jest": "^30.2.0"
   }
 }
