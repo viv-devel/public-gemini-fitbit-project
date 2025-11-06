@@ -4,7 +4,9 @@ import fetch from 'node-fetch';
 import { Buffer } from 'buffer';
 
 // Firebase Admin SDKを初期化
-admin.initializeApp();
+admin.initializeApp({
+    projectId: process.env.GCP_PROJECT,
+});
 const db = admin.firestore();
 
 // GCP_PROJECT環境変数が設定されていることを確認
@@ -47,14 +49,33 @@ async function accessSecretVersion(name) {
 }
 
 /**
- * Firestoreから指定されたユーザーのトークンを取得します。
- * @param {string} userId ユーザーのFitbit ID。
+ * Firebase IDトークンを検証し、デコードされたトークンを返します。
+ * @param {string} idToken フロントエンドから送信されたIDトークン。
+ * @returns {Promise<admin.auth.DecodedIdToken>} デコードされたトークン。
+ */
+async function verifyFirebaseIdToken(idToken) {
+    if (!idToken) {
+        throw new Error('ID token is required.');
+    }
+    try {
+        const decodedToken = await admin.auth().verifyIdToken(idToken);
+        return decodedToken;
+    } catch (error) {
+        console.error('Error verifying Firebase ID token:', error);
+        throw new Error('Invalid ID token.');
+    }
+}
+
+
+/**
+ * Firestoreから指定されたFirebaseユーザーIDのトークンを取得します。
+ * @param {string} firebaseUid ユーザーのFirebase UID。
  * @returns {Promise<object|null>} トークンオブジェクトを含むPromise。見つからない場合はnull。
  */
-async function getTokensFromFirestore(userId) {
-    const tokenDoc = await db.collection(FITBIT_TOKENS_COLLECTION).doc(userId).get();
+async function getTokensFromFirestore(firebaseUid) {
+    const tokenDoc = await db.collection(FITBIT_TOKENS_COLLECTION).doc(firebaseUid).get();
     if (!tokenDoc.exists) {
-        console.log(`No token found for user ${userId}`);
+        console.log(`No token found for user ${firebaseUid}`);
         return null;
     }
     return tokenDoc.data();
@@ -62,25 +83,35 @@ async function getTokensFromFirestore(userId) {
 
 /**
  * Firestoreに指定されたユーザーのトークンを保存または更新します。
- * @param {string} userId ユーザーのFitbit ID。
+ * ドキュメントIDとしてFirebase UIDを使用し、FitbitユーザーIDもドキュメント内に保存します。
+ * @param {string} firebaseUid ユーザーのFirebase UID。
+ * @param {string} fitbitUserId ユーザーのFitbit ID。
  * @param {object} tokens Fitbit APIレスポンスのトークンオブジェクト。
  */
-async function saveTokensToFirestore(userId, tokens) {
+async function saveTokensToFirestore(firebaseUid, fitbitUserId, tokens) {
     const expiresAt = new Date().getTime() + (tokens.expires_in * 1000);
     const tokenData = {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
         expiresAt: expiresAt,
+        fitbitUserId: fitbitUserId, // FitbitユーザーIDを保存
+        firebaseUid: firebaseUid,   // Firebase UIDを保存
     };
 
-    await db.collection(FITBIT_TOKENS_COLLECTION).doc(userId).set(tokenData);
-    console.log(`Successfully saved tokens for user ${userId}`);
+    await db.collection(FITBIT_TOKENS_COLLECTION).doc(firebaseUid).set(tokenData, { merge: true });
+    console.log(`Successfully saved tokens for Firebase user ${firebaseUid} (Fitbit user ${fitbitUserId})`);
 }
+
 
 /**
  * 認可コードをアクセストークンとリフレッシュトークンに交換します。
+ * @param {string} clientId FitbitクライアントID。
+ * @param {string} clientSecret Fitbitクライアントシークレット。
+ * @param {string} code 認可コード。
+ * @param {string} firebaseUid トークンを関連付けるFirebaseユーザーID。
+ * @returns {Promise<object>} Fitbitからのトークンデータ。
  */
-async function exchangeCodeForTokens(clientId, clientSecret, code) {
+async function exchangeCodeForTokens(clientId, clientSecret, code, firebaseUid) {
     const response = await fetch('https://api.fitbit.com/oauth2/token', {
         method: 'POST',
         headers: {
@@ -100,18 +131,23 @@ async function exchangeCodeForTokens(clientId, clientSecret, code) {
         throw new Error('Failed to exchange code for tokens.');
     }
     console.log('Code exchanged for tokens successfully.');
-    // レスポンスのuser_idを使用してトークンをFirestoreに保存
-    await saveTokensToFirestore(data.user_id, data);
+    // レスポンスのuser_idと渡されたfirebaseUidを使用してトークンをFirestoreに保存
+    await saveTokensToFirestore(firebaseUid, data.user_id, data);
     return data;
 }
 
+
 /**
  * 特定のユーザーのFitbitアクセストークンをリフレッシュします。
+ * @param {string} firebaseUid ユーザーのFirebase UID。
+ * @param {string} clientId FitbitクライアントID。
+ * @param {string} clientSecret Fitbitクライアントシークレット。
+ * @returns {Promise<string>} 新しいアクセストークン。
  */
-async function refreshFitbitAccessToken(userId, clientId, clientSecret) {
-    const currentTokens = await getTokensFromFirestore(userId);
+async function refreshFitbitAccessToken(firebaseUid, clientId, clientSecret) {
+    const currentTokens = await getTokensFromFirestore(firebaseUid);
     if (!currentTokens || !currentTokens.refreshToken) {
-        throw new Error(`No refresh token found for user ${userId}. Please re-authenticate.`);
+        throw new Error(`No refresh token found for user ${firebaseUid}. Please re-authenticate.`);
     }
 
     const response = await fetch('https://api.fitbit.com/oauth2/token', {
@@ -132,15 +168,16 @@ async function refreshFitbitAccessToken(userId, clientId, clientSecret) {
         throw new Error(`Fitbit API Refresh Error: ${newTokens.errors ? newTokens.errors[0].message : 'Unknown'}`);
     }
 
-    console.log(`Token refreshed for user ${userId}.`);
-    await saveTokensToFirestore(userId, newTokens);
+    console.log(`Token refreshed for user ${firebaseUid}.`);
+    // Firestoreに保存する際、既存のfitbitUserIdを渡す
+    await saveTokensToFirestore(firebaseUid, currentTokens.fitbitUserId, newTokens);
     return newTokens.access_token;
 }
 
 /**
  * 特定のユーザーのために食事データを作成し、Fitbitに記録します。
  */
-async function processAndLogFoods(accessToken, nutritionData, userId) {
+async function processAndLogFoods(accessToken, nutritionData, fitbitUserId) {
     const mealTypeMap = {
         "Breakfast": 1, "Morning Snack": 2, "Lunch": 3, "Afternoon Snack": 4,
         "Dinner": 5, "Anytime": 7
@@ -221,7 +258,7 @@ async function processAndLogFoods(accessToken, nutritionData, userId) {
             }
         }
 
-        const createFoodResponse = await fetch(`https://api.fitbit.com/1/user/${userId}/foods.json`, {
+        const createFoodResponse = await fetch(`https://api.fitbit.com/1/user/${fitbitUserId}/foods.json`, {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/x-www-form-urlencoded' },
             body: createFoodParams.toString(),
@@ -245,7 +282,7 @@ async function processAndLogFoods(accessToken, nutritionData, userId) {
             time: nutritionData.log_time,
         }).toString();
 
-        const logFoodResponse = await fetch(`https://api.fitbit.com/1/user/${userId}/foods/log.json`, {
+        const logFoodResponse = await fetch(`https://api.fitbit.com/1/user/${fitbitUserId}/foods/log.json`, {
             method: 'POST',
             headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/x-www-form-urlencoded' },
             body: logFoodParams,
@@ -258,7 +295,7 @@ async function processAndLogFoods(accessToken, nutritionData, userId) {
             throw new Error(`Failed to log food "${food.foodName}": ${errorMessage}`);
         }
 
-        console.log(`Successfully logged food: ${food.foodName} for user ${userId}`);
+        console.log(`Successfully logged food: ${food.foodName} for user ${fitbitUserId}`);
         return await logFoodResponse.json();
     });
 
@@ -285,44 +322,75 @@ export const fitbitWebhookHandler = async (req, res) => {
 
         // OAuthコールバック: 認可コードをトークンに交換
         if (req.method === 'GET' && req.query.code) {
-            const tokenData = await exchangeCodeForTokens(clientId, clientSecret, req.query.code);
-            const userId = tokenData.user_id;
             const state = req.query.state;
+            if (!state) {
+                return res.status(400).send('Invalid request: state parameter is missing.');
+            }
+            
+            let firebaseUid, redirectUri;
+            try {
+                // stateにはFirebase UIDとリダイレクト先URLが含まれていることを期待
+                const decodedState = JSON.parse(Buffer.from(state, 'base64').toString('utf8'));
+                firebaseUid = decodedState.firebaseUid;
+                redirectUri = decodedState.redirectUri;
+            } catch (e) {
+                return res.status(400).send('Invalid state: could not decode state parameter.');
+            }
 
-            if (state) {
-                const redirectUrl = new URL(state);
-                redirectUrl.searchParams.set('userId', userId);
+            if (!firebaseUid) {
+                return res.status(400).send('Invalid state: Firebase UID is missing.');
+            }
+
+            await exchangeCodeForTokens(clientId, clientSecret, req.query.code, firebaseUid);
+
+            if (redirectUri) {
+                const redirectUrl = new URL(redirectUri);
+                // クエリパラメータにFitbitユーザーIDではなくFirebase UIDを使用
+                redirectUrl.searchParams.set('uid', firebaseUid);
                 return res.redirect(302, redirectUrl.toString());
             }
-            return res.status(200).send(`Authorization successful! User ID: ${userId}. You can close this page.`);
+            return res.status(200).send(`Authorization successful! User UID: ${firebaseUid}. You can close this page.`);
         }
 
-        // メインロジック: 食事記録リクエストの処理
+        // メインロジック: 食事記録リクエストの処理 (認証必須)
         if (req.method === 'POST') {
-            const { userId, ...nutritionData } = req.body;
-
-            if (!userId) {
-                return res.status(400).json({ error: 'Invalid request. "userId" is required.' });
+            const authHeader = req.headers.authorization;
+            if (!authHeader || !authHeader.startsWith('Bearer ')) {
+                return res.status(401).json({ error: 'Unauthorized: Authorization header is missing or invalid.' });
             }
+            const idToken = authHeader.split('Bearer ')[1];
+
+            // IDトークンを検証してFirebase UIDを取得
+            const decodedToken = await verifyFirebaseIdToken(idToken);
+            const firebaseUid = decodedToken.uid;
+
+            const nutritionData = req.body;
+
             if (!nutritionData || !nutritionData.foods || !Array.isArray(nutritionData.foods)) {
                 return res.status(400).json({ error: 'Invalid JSON body. Required: meal_type, log_date, log_time, and a non-empty "foods" array.' });
             }
 
-            let tokens = await getTokensFromFirestore(userId);
+            let tokens = await getTokensFromFirestore(firebaseUid);
             if (!tokens) {
-                return res.status(401).json({ error: `No tokens found for user ${userId}. Please complete the OAuth flow.` });
+                return res.status(401).json({ error: `No tokens found for user ${firebaseUid}. Please complete the OAuth flow.` });
             }
 
             let accessToken;
             // トークンが期限切れか確認し、必要であればリフレッシュ
             if (new Date().getTime() >= tokens.expiresAt) {
-                console.log(`Token for user ${userId} has expired. Refreshing...`);
-                accessToken = await refreshFitbitAccessToken(userId, clientId, clientSecret);
+                console.log(`Token for user ${firebaseUid} has expired. Refreshing...`);
+                accessToken = await refreshFitbitAccessToken(firebaseUid, clientId, clientSecret);
             } else {
                 accessToken = tokens.accessToken;
             }
 
-            const fitbitResponses = await processAndLogFoods(accessToken, nutritionData, userId);
+            // Firestoreから取得したFitbitユーザーIDを使用
+            const fitbitUserId = tokens.fitbitUserId;
+            if (!fitbitUserId) {
+                 return res.status(500).json({ error: 'Fitbit user ID not found in the database.' });
+            }
+
+            const fitbitResponses = await processAndLogFoods(accessToken, nutritionData, fitbitUserId);
 
             return res.status(200).json({
                 message: 'All foods logged successfully to Fitbit.',
@@ -335,6 +403,10 @@ export const fitbitWebhookHandler = async (req, res) => {
 
     } catch (error) {
         console.error('Unhandled error in fitbitWebhookHandler:', error);
+        // エラーが認証関連の場合、401または403を返す
+        if (error.message.includes('ID token') || error.message.includes('Unauthorized')) {
+            return res.status(401).json({ error: error.message });
+        }
         return res.status(500).json({ error: error.message || 'An internal server error occurred.' });
     }
 };
