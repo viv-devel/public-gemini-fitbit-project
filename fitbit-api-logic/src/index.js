@@ -1,4 +1,5 @@
 import { Buffer } from 'buffer';
+import { AuthenticationError, ValidationError, FitbitApiError, MethodNotAllowedError } from './errors.js';
 import { accessSecretVersion } from './secrets.js';
 import {
     verifyFirebaseIdToken,
@@ -45,7 +46,7 @@ export const fitbitWebhookHandler = async (req, res) => {
         if (req.method === 'GET' && req.query.code) {
             const state = req.query.state;
             if (!state) {
-                return res.status(400).send('Invalid request: state parameter is missing.');
+                throw new ValidationError('Invalid request: state parameter is missing.');
             }
             
             let firebaseUid, redirectUri;
@@ -55,11 +56,11 @@ export const fitbitWebhookHandler = async (req, res) => {
                 firebaseUid = decodedState.firebaseUid;
                 redirectUri = decodedState.redirectUri;
             } catch (e) {
-                return res.status(400).send(`Invalid state: could not decode state parameter. Error: ${e.message}`);
+                throw new ValidationError(`Invalid state: could not decode state parameter. Error: ${e.message}`);
             }
 
             if (!firebaseUid) {
-                return res.status(400).send('Invalid state: Firebase UID is missing.');
+                throw new ValidationError('Invalid state: Firebase UID is missing.');
             }
 
             await exchangeCodeForTokens(clientId, clientSecret, req.query.code, firebaseUid);
@@ -77,7 +78,7 @@ export const fitbitWebhookHandler = async (req, res) => {
         if (req.method === 'POST') {
             const authHeader = req.headers.authorization;
             if (!authHeader || !authHeader.startsWith('Bearer ')) {
-                return res.status(401).json({ error: 'Unauthorized: Authorization header is missing or invalid.' });
+                throw new AuthenticationError('Unauthorized: Authorization header is missing or invalid.');
             }
             const idToken = authHeader.split('Bearer ')[1];
 
@@ -88,12 +89,12 @@ export const fitbitWebhookHandler = async (req, res) => {
             const nutritionData = req.body;
 
             if (!nutritionData || !nutritionData.foods || !Array.isArray(nutritionData.foods)) {
-                return res.status(400).json({ error: 'Invalid JSON body. Required: meal_type, log_date, log_time, and a non-empty "foods" array.' });
+                throw new ValidationError('Invalid JSON body. Required: meal_type, log_date, log_time, and a non-empty "foods" array.');
             }
 
             let tokens = await getTokensFromFirestore(firebaseUid);
             if (!tokens) {
-                return res.status(401).json({ error: `No tokens found for user ${firebaseUid}. Please complete the OAuth flow.` });
+                throw new AuthenticationError(`No tokens found for user ${firebaseUid}. Please complete the OAuth flow.`);
             }
 
             let accessToken;
@@ -108,7 +109,7 @@ export const fitbitWebhookHandler = async (req, res) => {
             // Use Fitbit user ID from Firestore
             const fitbitUserId = tokens.fitbitUserId;
             if (!fitbitUserId) {
-                 return res.status(500).json({ error: 'Fitbit user ID not found in the database.' });
+                 throw new FitbitApiError('Fitbit user ID not found in the database.', 500);
             }
 
             const fitbitResponses = await processAndLogFoods(accessToken, nutritionData, fitbitUserId);
@@ -120,12 +121,13 @@ export const fitbitWebhookHandler = async (req, res) => {
             });
         }
 
-        return res.status(405).send('Method Not Allowed');
+        throw new MethodNotAllowedError('Method Not Allowed');
 
     } catch (error) {
         console.error('Unhandled error in fitbitWebhookHandler:', error);
-        // Return 401 or 403 for authentication-related errors
-        if (error.message.includes('ID token') || error.message.includes('Unauthorized')) {
+        if (error.statusCode) {
+            return res.status(error.statusCode).json({ error: error.message });
+        } else if (error.message.includes('ID token') || error.message.includes('Unauthorized')) {
             return res.status(401).json({ error: error.message });
         }
         return res.status(500).json({ error: error.message || 'An internal server error occurred.' });

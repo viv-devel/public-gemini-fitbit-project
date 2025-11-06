@@ -67,7 +67,8 @@ describe('fitbitWebhookHandler (index.js)', () => {
       const res = mockRes();
       await fitbitWebhookHandler(req, res);
       expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.send).toHaveBeenCalledWith('Invalid request: state parameter is missing.');
+      expect(res.send).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith({ error: 'Invalid request: state parameter is missing.' });
     });
 
     it('should return 400 if state is invalid', async () => {
@@ -75,7 +76,8 @@ describe('fitbitWebhookHandler (index.js)', () => {
       const res = mockRes();
       await fitbitWebhookHandler(req, res);
       expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.send).toHaveBeenCalledWith('Invalid state: could not decode state parameter.');
+      expect(res.send).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith({ error: expect.stringContaining('Invalid state: could not decode state parameter.') });
     });
 
     it('should return 400 if firebaseUid is missing from state', async () => {
@@ -84,7 +86,8 @@ describe('fitbitWebhookHandler (index.js)', () => {
       const res = mockRes();
       await fitbitWebhookHandler(req, res);
       expect(res.status).toHaveBeenCalledWith(400);
-      expect(res.send).toHaveBeenCalledWith('Invalid state: Firebase UID is missing.');
+      expect(res.send).not.toHaveBeenCalled();
+      expect(res.json).toHaveBeenCalledWith({ error: 'Invalid state: Firebase UID is missing.' });
     });
   });
 
@@ -184,7 +187,8 @@ describe('fitbitWebhookHandler (index.js)', () => {
         const res = mockRes();
         await fitbitWebhookHandler(req, res);
         expect(res.status).toHaveBeenCalledWith(405);
-        expect(res.send).toHaveBeenCalledWith('Method Not Allowed');
+        expect(res.send).not.toHaveBeenCalled();
+        expect(res.json).toHaveBeenCalledWith({ error: 'Method Not Allowed' });
     });
 
     it('should return 500 for a generic error', async () => {
