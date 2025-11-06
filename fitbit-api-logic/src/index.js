@@ -55,7 +55,7 @@ export const fitbitWebhookHandler = async (req, res) => {
                 firebaseUid = decodedState.firebaseUid;
                 redirectUri = decodedState.redirectUri;
             } catch (e) {
-                return res.status(400).send('Invalid state: could not decode state parameter.');
+                return res.status(400).send(`Invalid state: could not decode state parameter. Error: ${e.message}`);
             }
 
             if (!firebaseUid) {
