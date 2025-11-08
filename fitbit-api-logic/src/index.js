@@ -11,21 +11,21 @@ import {
     processAndLogFoods,
 } from './fitbit.js';
 
-// Check for required environment variables
+// 必要な環境変数のチェック
 if (!process.env.GCP_PROJECT) {
-    throw new Error('GCP_PROJECT environment variable is not set. This is required for Secret Manager access.');
+    throw new Error('GCP_PROJECT 環境変数が設定されていません。Secret Manager へのアクセスには必須です。');
 }
 if (!process.env.FITBIT_REDIRECT_URI) {
-    throw new Error('FITBIT_REDIRECT_URI environment variable is not set.');
+    throw new Error('FITBIT_REDIRECT_URI 環境変数が設定されていません。');
 }
 
-// Secret Manager secret names for application credentials
+// アプリケーション認証情報用のSecret Managerシークレット名
 const PROJECT_ID = process.env.GCP_PROJECT;
 const FITBIT_CLIENT_ID_NAME = `projects/${PROJECT_ID}/secrets/FITBIT_CLIENT_ID/versions/latest`;
 const FITBIT_CLIENT_SECRET_NAME = `projects/${PROJECT_ID}/secrets/FITBIT_CLIENT_SECRET/versions/latest`;
 
 /**
- * Main Cloud Function
+ * メインのCloud Function
  */
 export const fitbitWebhookHandler = async (req, res) => {
     res.set('Access-Control-Allow-Origin', '*');
@@ -42,7 +42,7 @@ export const fitbitWebhookHandler = async (req, res) => {
             accessSecretVersion(FITBIT_CLIENT_SECRET_NAME),
         ]);
 
-        // OAuth callback: Exchange authorization code for tokens
+        // OAuthコールバック: 認証コードをトークンと交換
         if (req.method === 'GET' && req.query.code) {
             const state = req.query.state;
             if (!state) {
@@ -51,7 +51,7 @@ export const fitbitWebhookHandler = async (req, res) => {
             
             let firebaseUid, redirectUri;
             try {
-                // Expect state to contain Firebase UID and redirect URL
+                // stateにはFirebase UIDとリダイレクトURLが含まれることを想定
                 const decodedState = JSON.parse(Buffer.from(state, 'base64').toString('utf8'));
                 firebaseUid = decodedState.firebaseUid;
                 redirectUri = decodedState.redirectUri;
@@ -67,14 +67,14 @@ export const fitbitWebhookHandler = async (req, res) => {
 
             if (redirectUri) {
                 const redirectUrl = new URL(redirectUri);
-                // Use Firebase UID instead of Fitbit user ID in query params
+                // クエリパラメータでFitbitユーザーIDの代わりにFirebase UIDを使用
                 redirectUrl.searchParams.set('uid', firebaseUid);
                 return res.redirect(302, redirectUrl.toString());
             }
             return res.status(200).send(`Authorization successful! User UID: ${firebaseUid}. You can close this page.`);
         }
 
-        // Main logic: Process food logging requests (requires authentication)
+        // メインロジック: 食事ログのリクエストを処理 (認証が必要)
         if (req.method === 'POST') {
             const authHeader = req.headers.authorization;
             if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -82,7 +82,7 @@ export const fitbitWebhookHandler = async (req, res) => {
             }
             const idToken = authHeader.split('Bearer ')[1];
 
-            // Verify ID token to get Firebase UID
+            // IDトークンを検証してFirebase UIDを取得
             const decodedToken = await verifyFirebaseIdToken(idToken);
             const firebaseUid = decodedToken.uid;
 
@@ -98,7 +98,7 @@ export const fitbitWebhookHandler = async (req, res) => {
             }
 
             let accessToken;
-            // Check if token is expired and refresh if necessary
+            // トークンの有効期限が切れているかチェックし、必要であればリフレッシュ
             if (new Date().getTime() >= tokens.expiresAt) {
                 console.log(`Token for user ${firebaseUid} has expired. Refreshing...`);
                 accessToken = await refreshFitbitAccessToken(firebaseUid, clientId, clientSecret);
@@ -106,7 +106,7 @@ export const fitbitWebhookHandler = async (req, res) => {
                 accessToken = tokens.accessToken;
             }
 
-            // Use Fitbit user ID from Firestore
+            // FirestoreからFitbitユーザーIDを使用
             const fitbitUserId = tokens.fitbitUserId;
             if (!fitbitUserId) {
                  throw new FitbitApiError('Fitbit user ID not found in the database.', 500);
