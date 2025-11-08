@@ -5,11 +5,12 @@ const mockCollection = jest.fn();
 const mockDoc = jest.fn();
 const mockGet = jest.fn();
 const mockSet = jest.fn();
+const mockInitializeApp = jest.fn(); // initializeApp のモックを追加
 
 // Mock firebase-admin using the functions defined above
 jest.mock('firebase-admin', () => ({
   apps: [], // Mock the apps array to allow initialization
-  initializeApp: jest.fn(),
+  initializeApp: mockInitializeApp, // initializeApp をモック関数に置き換え
   auth: () => ({
     verifyIdToken: mockVerifyIdToken,
   }),
@@ -29,6 +30,13 @@ describe('firebase.js', () => {
 
   afterEach(() => {
     jest.clearAllMocks();
+  });
+
+  it('should initialize firebase admin once', () => {
+    expect(mockInitializeApp).toHaveBeenCalledTimes(1);
+    expect(mockInitializeApp).toHaveBeenCalledWith({
+      projectId: process.env.GCP_PROJECT,
+    });
   });
 
   describe('verifyFirebaseIdToken', () => {
