@@ -1,8 +1,8 @@
 import admin from 'firebase-admin';
 import { AuthenticationError } from './errors.js';
 
-// Initialize Firebase Admin SDK
-// This check ensures that it's initialized only once.
+// Firebase Admin SDKを初期化
+// このチェックにより、一度だけ初期化されることを保証します。
 if (admin.apps.length === 0) {
     admin.initializeApp({
         projectId: process.env.GCP_PROJECT,
@@ -11,13 +11,13 @@ if (admin.apps.length === 0) {
 
 const db = admin.firestore();
 
-// Firestore collection for tokens
+// トークン用のFirestoreコレクション
 const FITBIT_TOKENS_COLLECTION = 'fitbit_tokens';
 
 /**
- * Verifies the Firebase ID token and returns the decoded token.
- * @param {string} idToken The ID token sent from the frontend.
- * @returns {Promise<admin.auth.DecodedIdToken>} The decoded token.
+ * Firebase IDトークンを検証し、デコードされたトークンを返します。
+ * @param {string} idToken フロントエンドから送信されたIDトークン。
+ * @returns {Promise<admin.auth.DecodedIdToken>} デコードされたトークン。
  */
 export async function verifyFirebaseIdToken(idToken) {
     if (!idToken) {
@@ -33,9 +33,9 @@ export async function verifyFirebaseIdToken(idToken) {
 }
 
 /**
- * Retrieves tokens for a given Firebase user ID from Firestore.
- * @param {string} firebaseUid The Firebase UID of the user.
- * @returns {Promise<object|null>} A promise containing the token object, or null if not found.
+ * 指定されたFirebaseユーザーIDのトークンをFirestoreから取得します。
+ * @param {string} firebaseUid ユーザーのFirebase UID。
+ * @returns {Promise<object|null>} トークンオブジェクトを含むPromise、見つからない場合はnull。
  */
 export async function getTokensFromFirestore(firebaseUid) {
     const tokenDoc = await db.collection(FITBIT_TOKENS_COLLECTION).doc(firebaseUid).get();
@@ -47,11 +47,11 @@ export async function getTokensFromFirestore(firebaseUid) {
 }
 
 /**
- * Saves or updates a user's tokens in Firestore.
- * Uses Firebase UID as the document ID and also stores the Fitbit user ID within the document.
- * @param {string} firebaseUid The Firebase UID of the user.
- * @param {string} fitbitUserId The Fitbit ID of the user.
- * @param {object} tokens The token object from the Fitbit API response.
+ * ユーザーのトークンをFirestoreに保存または更新します。
+ * ドキュメントIDとしてFirebase UIDを使用し、FitbitユーザーIDもドキュメント内に保存します。
+ * @param {string} firebaseUid ユーザーのFirebase UID。
+ * @param {string} fitbitUserId ユーザーのFitbit ID。
+ * @param {object} tokens Fitbit APIレスポンスからのトークンオブジェクト。
  */
 export async function saveTokensToFirestore(firebaseUid, fitbitUserId, tokens) {
     const expiresAt = new Date().getTime() + (tokens.expires_in * 1000);
@@ -59,8 +59,8 @@ export async function saveTokensToFirestore(firebaseUid, fitbitUserId, tokens) {
         accessToken: tokens.access_token,
         refreshToken: tokens.refresh_token,
         expiresAt: expiresAt,
-        fitbitUserId: fitbitUserId, // Save Fitbit user ID
-        firebaseUid: firebaseUid,   // Save Firebase UID
+        fitbitUserId: fitbitUserId, // FitbitユーザーIDを保存
+        firebaseUid: firebaseUid,   // Firebase UIDを保存
     };
 
     await db.collection(FITBIT_TOKENS_COLLECTION).doc(firebaseUid).set(tokenData, { merge: true });
