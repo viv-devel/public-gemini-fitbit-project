@@ -30,10 +30,29 @@ const mockRes = () => {
 
 describe('fitbitWebhookHandler (index.js)', () => {
 
+  let originalGcpProject;
+  let originalFitbitRedirectUri;
+
+  beforeAll(() => {
+    // Save original environment variables
+    originalGcpProject = process.env.GCP_PROJECT;
+    originalFitbitRedirectUri = process.env.FITBIT_REDIRECT_URI;
+  });
+
+  afterAll(() => {
+    // Restore original environment variables
+    process.env.GCP_PROJECT = originalGcpProject;
+    process.env.FITBIT_REDIRECT_URI = originalFitbitRedirectUri;
+  });
+
   beforeEach(() => {
     jest.clearAllMocks();
     // Mock secret manager to return dummy credentials by default
     accessSecretVersion.mockResolvedValue('dummy-secret');
+    
+    // Ensure environment variables are set for most tests
+    process.env.GCP_PROJECT = 'test-project';
+    process.env.FITBIT_REDIRECT_URI = 'http://localhost:3000/oauth';
   });
 
   describe('OPTIONS method', () => {

@@ -19,6 +19,7 @@ Thumbs.db
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+coverage/
 
 # ローカルテスト用のスクリプトを除外
 /fitbit-api-logic/test-secret.js

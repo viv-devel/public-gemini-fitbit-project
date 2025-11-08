@@ -61,6 +61,175 @@ describe('fitbit.js', () => {
       expect(fetch.mock.calls[1][1].body.toString()).toContain('foodId=12345');
     });
 
+    it('should use default formType and description if not provided', async () => {
+      fetch
+        .mockResolvedValueOnce({ 
+          ok: true,
+          json: jest.fn().mockResolvedValue({ food: { foodId: '12345' } }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: jest.fn().mockResolvedValue({ message: 'success' }),
+        });
+
+      const accessToken = 'dummy_token';
+      const fitbitUserId = 'dummy_user';
+      const nutritionData = {
+          meal_type: 'Lunch',
+          log_date: '2025-11-06',
+          log_time: '13:00',
+          foods: [{
+              foodName: 'test food without formType and description',
+              amount: 1,
+              unit: 'serving',
+              calories: 100
+          }]
+      };
+
+      await processAndLogFoods(accessToken, nutritionData, fitbitUserId);
+
+      expect(fetch).toHaveBeenCalledTimes(2);
+      const createFoodBody = fetch.mock.calls[0][1].body.toString();
+      expect(createFoodBody).toContain('formType=DRY');
+      expect(createFoodBody).toContain('description=Logged+via+Gemini%3A+test+food+without+formType+and+description');
+    });
+
+    it('should use provided formType and description', async () => {
+      fetch
+        .mockResolvedValueOnce({ 
+          ok: true,
+          json: jest.fn().mockResolvedValue({ food: { foodId: '12345' } }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: jest.fn().mockResolvedValue({ message: 'success' }),
+        });
+
+      const accessToken = 'dummy_token';
+      const fitbitUserId = 'dummy_user';
+      const nutritionData = {
+          meal_type: 'Lunch',
+          log_date: '2025-11-06',
+          log_time: '13:00',
+          foods: [{
+              foodName: 'test food with formType and description',
+              amount: 1,
+              unit: 'serving',
+              calories: 100,
+              formType: 'LIQUID',
+              description: 'Custom description'
+          }]
+      };
+
+      await processAndLogFoods(accessToken, nutritionData, fitbitUserId);
+
+      expect(fetch).toHaveBeenCalledTimes(2);
+      const createFoodBody = fetch.mock.calls[0][1].body.toString();
+      expect(createFoodBody).toContain('formType=LIQUID');
+      expect(createFoodBody).toContain('description=Custom+description');
+    });
+
+    it('should use default formType if formType is null', async () => {
+      fetch
+        .mockResolvedValueOnce({ 
+          ok: true,
+          json: jest.fn().mockResolvedValue({ food: { foodId: '12345' } }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: jest.fn().mockResolvedValue({ message: 'success' }),
+        });
+
+      const accessToken = 'dummy_token';
+      const fitbitUserId = 'dummy_user';
+      const nutritionData = {
+          meal_type: 'Lunch',
+          log_date: '2025-11-06',
+          log_time: '13:00',
+          foods: [{
+              foodName: 'test food with null formType',
+              amount: 1,
+              unit: 'serving',
+              calories: 100,
+              formType: null
+          }]
+      };
+
+      await processAndLogFoods(accessToken, nutritionData, fitbitUserId);
+
+      expect(fetch).toHaveBeenCalledTimes(2);
+      const createFoodBody = fetch.mock.calls[0][1].body.toString();
+      expect(createFoodBody).toContain('formType=DRY');
+    });
+
+    it('should use default description if description is null', async () => {
+      fetch
+        .mockResolvedValueOnce({ 
+          ok: true,
+          json: jest.fn().mockResolvedValue({ food: { foodId: '12345' } }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: jest.fn().mockResolvedValue({ message: 'success' }),
+        });
+
+      const accessToken = 'dummy_token';
+      const fitbitUserId = 'dummy_user';
+      const nutritionData = {
+          meal_type: 'Lunch',
+          log_date: '2025-11-06',
+          log_time: '13:00',
+          foods: [{
+              foodName: 'test food with null description',
+              amount: 1,
+              unit: 'serving',
+              calories: 100,
+              description: null
+          }]
+      };
+
+      await processAndLogFoods(accessToken, nutritionData, fitbitUserId);
+
+      expect(fetch).toHaveBeenCalledTimes(2);
+      const createFoodBody = fetch.mock.calls[0][1].body.toString();
+      expect(createFoodBody).toContain('description=Logged+via+Gemini%3A+test+food+with+null+description');
+    });
+
+    it('should use default formType and description if both are null', async () => {
+      fetch
+        .mockResolvedValueOnce({ 
+          ok: true,
+          json: jest.fn().mockResolvedValue({ food: { foodId: '12345' } }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: jest.fn().mockResolvedValue({ message: 'success' }),
+        });
+
+      const accessToken = 'dummy_token';
+      const fitbitUserId = 'dummy_user';
+      const nutritionData = {
+          meal_type: 'Lunch',
+          log_date: '2025-11-06',
+          log_time: '13:00',
+          foods: [{
+              foodName: 'test food with null formType and description',
+              amount: 1,
+              unit: 'serving',
+              calories: 100,
+              formType: null,
+              description: null
+          }]
+      };
+
+      await processAndLogFoods(accessToken, nutritionData, fitbitUserId);
+
+      expect(fetch).toHaveBeenCalledTimes(2);
+      const createFoodBody = fetch.mock.calls[0][1].body.toString();
+      expect(createFoodBody).toContain('formType=DRY');
+      expect(createFoodBody).toContain('description=Logged+via+Gemini%3A+test+food+with+null+formType+and+description');
+    });
+
     it('should throw an error if a food item is missing required fields', async () => {
       const nutritionData = {
         meal_type: 'Lunch',
