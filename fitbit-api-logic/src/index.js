@@ -27,7 +27,25 @@ const FITBIT_CLIENT_SECRET_NAME = `projects/${PROJECT_ID}/secrets/FITBIT_CLIENT_
 /**
  * メインのCloud Function
  */
-export const fitbitWebhookHandler = async (req, res) => {
+import express from 'express'; // expressをインポート
+
+// 必要な環境変数のチェック
+if (!process.env.GCP_PROJECT) {
+    throw new Error('GCP_PROJECT 環境変数が設定されていません。Secret Manager へのアクセスには必須です。');
+}
+if (!process.env.FITBIT_REDIRECT_URI) {
+    throw new Error('FITBIT_REDIRECT_URI 環境変数が設定されていません。');
+}
+
+// アプリケーション認証情報用のSecret Managerシークレット名
+const PROJECT_ID = process.env.GCP_PROJECT;
+const FITBIT_CLIENT_ID_NAME = `projects/${PROJECT_ID}/secrets/FITBIT_CLIENT_ID/versions/latest`;
+const FITBIT_CLIENT_SECRET_NAME = `projects/${PROJECT_ID}/secrets/FITBIT_CLIENT_SECRET/versions/latest`;
+
+/**
+ * メインのCloud Function
+ */
+const fitbitWebhookHandler = async (req, res) => {
     res.set('Access-Control-Allow-Origin', '*');
     res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
@@ -133,3 +151,15 @@ export const fitbitWebhookHandler = async (req, res) => {
         return res.status(500).json({ error: error.message || 'An internal server error occurred.' });
     }
 };
+
+// Cloud Run 用のサーバー起動ロジックを追加
+const app = express();
+app.use(express.json()); // JSONボディをパースするために必要
+
+// fitbitWebhookHandlerをExpressのミドルウェアとして使用
+app.all('/', fitbitWebhookHandler); // GET, POST, OPTIONSなど全てのリクエストを処理
+
+const port = process.env.PORT || 8080; // Cloud RunはPORT環境変数を提供する
+app.listen(port, () => {
+    console.log(`fitbit-auth-webhook: listening on port ${port}`);
+});
