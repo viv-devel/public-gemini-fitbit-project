@@ -5,26 +5,30 @@ import {
     NotFoundError,
     FitbitApiError,
     MethodNotAllowedError
-} from './errors.js';
+} from './errors';
 
 describe('CustomError', () => {
-    test('should create a custom error with default status code 500', () => {
-        const error = new CustomError('Test Custom Error');
+    test('should create an instance with a message and default status code', () => {
+        const error = new CustomError('Test message');
         expect(error).toBeInstanceOf(CustomError);
-        expect(error).toBeInstanceOf(Error);
-        expect(error.message).toBe('Test Custom Error');
+        expect(error.message).toBe('Test message');
         expect(error.statusCode).toBe(500);
         expect(error.name).toBe('CustomError');
+        expect(error.stack).toBeDefined();
     });
 
-    test('should create a custom error with a specified status code', () => {
-        const error = new CustomError('Test Custom Error', 404);
+    test('should create an instance with a message and custom status code', () => {
+        const error = new CustomError('Another message', 404);
+        expect(error).toBeInstanceOf(CustomError);
+        expect(error.message).toBe('Another message');
         expect(error.statusCode).toBe(404);
+        expect(error.name).toBe('CustomError');
+        expect(error.stack).toBeDefined();
     });
 });
 
 describe('AuthenticationError', () => {
-    test('should create an authentication error with default message and status code 401', () => {
+    test('should create an instance with default message and status code', () => {
         const error = new AuthenticationError();
         expect(error).toBeInstanceOf(AuthenticationError);
         expect(error).toBeInstanceOf(CustomError);
@@ -33,14 +37,18 @@ describe('AuthenticationError', () => {
         expect(error.name).toBe('AuthenticationError');
     });
 
-    test('should create an authentication error with a custom message', () => {
-        const error = new AuthenticationError('Custom Auth Error');
-        expect(error.message).toBe('Custom Auth Error');
+    test('should create an instance with a custom message and status code', () => {
+        const error = new AuthenticationError('Auth required', 403);
+        expect(error).toBeInstanceOf(AuthenticationError);
+        expect(error).toBeInstanceOf(CustomError);
+        expect(error.message).toBe('Auth required');
+        expect(error.statusCode).toBe(403);
+        expect(error.name).toBe('AuthenticationError');
     });
 });
 
 describe('ValidationError', () => {
-    test('should create a validation error with default message and status code 400', () => {
+    test('should create an instance with default message and status code', () => {
         const error = new ValidationError();
         expect(error).toBeInstanceOf(ValidationError);
         expect(error).toBeInstanceOf(CustomError);
@@ -49,14 +57,18 @@ describe('ValidationError', () => {
         expect(error.name).toBe('ValidationError');
     });
 
-    test('should create a validation error with a custom message', () => {
-        const error = new ValidationError('Custom Validation Error');
-        expect(error.message).toBe('Custom Validation Error');
+    test('should create an instance with a custom message and status code', () => {
+        const error = new ValidationError('Invalid input', 422);
+        expect(error).toBeInstanceOf(ValidationError);
+        expect(error).toBeInstanceOf(CustomError);
+        expect(error.message).toBe('Invalid input');
+        expect(error.statusCode).toBe(422);
+        expect(error.name).toBe('ValidationError');
     });
 });
 
 describe('NotFoundError', () => {
-    test('should create a not found error with default message and status code 404', () => {
+    test('should create an instance with default message and status code', () => {
         const error = new NotFoundError();
         expect(error).toBeInstanceOf(NotFoundError);
         expect(error).toBeInstanceOf(CustomError);
@@ -65,14 +77,18 @@ describe('NotFoundError', () => {
         expect(error.name).toBe('NotFoundError');
     });
 
-    test('should create a not found error with a custom message', () => {
-        const error = new NotFoundError('Custom Not Found Error');
-        expect(error.message).toBe('Custom Not Found Error');
+    test('should create an instance with a custom message and status code', () => {
+        const error = new NotFoundError('User not found', 404);
+        expect(error).toBeInstanceOf(NotFoundError);
+        expect(error).toBeInstanceOf(CustomError);
+        expect(error.message).toBe('User not found');
+        expect(error.statusCode).toBe(404);
+        expect(error.name).toBe('NotFoundError');
     });
 });
 
 describe('FitbitApiError', () => {
-    test('should create a Fitbit API error with default message and status code 500', () => {
+    test('should create an instance with default message and status code', () => {
         const error = new FitbitApiError();
         expect(error).toBeInstanceOf(FitbitApiError);
         expect(error).toBeInstanceOf(CustomError);
@@ -81,14 +97,18 @@ describe('FitbitApiError', () => {
         expect(error.name).toBe('FitbitApiError');
     });
 
-    test('should create a Fitbit API error with a custom message', () => {
-        const error = new FitbitApiError('Custom Fitbit API Error');
-        expect(error.message).toBe('Custom Fitbit API Error');
+    test('should create an instance with a custom message and status code', () => {
+        const error = new FitbitApiError('Fitbit service unavailable', 503);
+        expect(error).toBeInstanceOf(FitbitApiError);
+        expect(error).toBeInstanceOf(CustomError);
+        expect(error.message).toBe('Fitbit service unavailable');
+        expect(error.statusCode).toBe(503);
+        expect(error.name).toBe('FitbitApiError');
     });
 });
 
 describe('MethodNotAllowedError', () => {
-    test('should create a method not allowed error with default message and status code 405', () => {
+    test('should create an instance with default message and status code', () => {
         const error = new MethodNotAllowedError();
         expect(error).toBeInstanceOf(MethodNotAllowedError);
         expect(error).toBeInstanceOf(CustomError);
@@ -97,8 +117,12 @@ describe('MethodNotAllowedError', () => {
         expect(error.name).toBe('MethodNotAllowedError');
     });
 
-    test('should create a method not allowed error with a custom message', () => {
-        const error = new MethodNotAllowedError('Custom Method Not Allowed Error');
-        expect(error.message).toBe('Custom Method Not Allowed Error');
+    test('should create an instance with a custom message and status code', () => {
+        const error = new MethodNotAllowedError('POST not allowed', 405);
+        expect(error).toBeInstanceOf(MethodNotAllowedError);
+        expect(error).toBeInstanceOf(CustomError);
+        expect(error.message).toBe('POST not allowed');
+        expect(error.statusCode).toBe(405);
+        expect(error.name).toBe('MethodNotAllowedError');
     });
 });

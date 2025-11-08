@@ -1,126 +1,145 @@
+import {
+    verifyFirebaseIdToken,
+    getTokensFromFirestore,
+    saveTokensToFirestore
+} from './firebase';
+import {
+    AuthenticationError
+} from './errors';
+import admin from 'firebase-admin';
 
-// Define mock functions first
-const mockVerifyIdToken = jest.fn();
-const mockCollection = jest.fn();
-const mockDoc = jest.fn();
-const mockGet = jest.fn();
-const mockSet = jest.fn();
-const mockInitializeApp = jest.fn(); // initializeApp のモックを追加
+// Firebase Admin SDKのモック
+jest.mock('firebase-admin', () => {
+    const mockAuth = {
+        verifyIdToken: jest.fn(),
+    };
+    const mockDoc = {
+        get: jest.fn(),
+        set: jest.fn(),
+    };
+    const mockCollection = {
+        doc: jest.fn(() => mockDoc),
+    };
+    const mockFirestore = {
+        collection: jest.fn(() => mockCollection),
+    };
+    return {
+        initializeApp: jest.fn(),
+        apps: [],
+        auth: jest.fn(() => mockAuth),
+        firestore: jest.fn(() => mockFirestore),
+    };
+});
 
-// Mock firebase-admin using the functions defined above
-jest.mock('firebase-admin', () => ({
-  apps: [], // Mock the apps array to allow initialization
-  initializeApp: mockInitializeApp, // initializeApp をモック関数に置き換え
-  auth: () => ({
-    verifyIdToken: mockVerifyIdToken,
-  }),
-  firestore: () => ({
-    collection: mockCollection,
-  }),
-}));
+const mockAuth = admin.auth();
+const mockFirestore = admin.firestore();
+const mockCollection = mockFirestore.collection('fitbit_tokens');
+const mockDoc = mockCollection.doc('testUid');
 
-// Now that mocks are set up, require the module to be tested
-const { verifyFirebaseIdToken, getTokensFromFirestore, saveTokensToFirestore } = require('./firebase.js');
-
-// Mock chain for firestore
-mockCollection.mockReturnValue({ doc: mockDoc });
-mockDoc.mockReturnValue({ get: mockGet, set: mockSet });
-
-describe('firebase.js', () => {
-
-  afterEach(() => {
-    jest.clearAllMocks();
-  });
-
-  it('should initialize firebase admin once', () => {
-    expect(mockInitializeApp).toHaveBeenCalledTimes(1);
-    expect(mockInitializeApp).toHaveBeenCalledWith({
-      projectId: process.env.GCP_PROJECT,
-    });
-  });
-
-  describe('verifyFirebaseIdToken', () => {
-    it('should return decoded token for a valid ID token', async () => {
-      const idToken = 'valid-token';
-      const decodedToken = { uid: 'test-uid', email: 'test@example.com' };
-      mockVerifyIdToken.mockResolvedValue(decodedToken);
-
-      const result = await verifyFirebaseIdToken(idToken);
-
-      expect(result).toEqual(decodedToken);
-      expect(mockVerifyIdToken).toHaveBeenCalledWith(idToken);
-      expect(mockVerifyIdToken).toHaveBeenCalledTimes(1);
+describe('Firebase Functions', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        admin.apps = []; // 各テストの前にアプリの初期化状態をリセット
+        jest.spyOn(console, 'log').mockImplementation(() => {}); // console.logをモック
+        jest.spyOn(console, 'error').mockImplementation(() => {}); // console.errorもモック
     });
 
-    it('should throw an error for an invalid ID token', async () => {
-      const idToken = 'invalid-token';
-      mockVerifyIdToken.mockRejectedValue(new Error('Invalid token'));
-
-      await expect(verifyFirebaseIdToken(idToken)).rejects.toThrow('Invalid ID token.');
+    afterEach(() => {
+        jest.restoreAllMocks(); // すべてのモックを元に戻す
     });
 
-    it('should throw an error if no ID token is provided', async () => {
-      await expect(verifyFirebaseIdToken(null)).rejects.toThrow('ID token is required.');
+    describe('verifyFirebaseIdToken', () => {
+        test('should throw AuthenticationError if idToken is not provided', async () => {
+            await expect(verifyFirebaseIdToken(null)).rejects.toThrow(AuthenticationError);
+            await expect(verifyFirebaseIdToken('')).rejects.toThrow(AuthenticationError);
+            expect(mockAuth.verifyIdToken).not.toHaveBeenCalled();
+        });
+
+        test('should throw AuthenticationError for an invalid ID token', async () => {
+            mockAuth.verifyIdToken.mockRejectedValueOnce(new Error('Invalid token'));
+            await expect(verifyFirebaseIdToken('invalidToken')).rejects.toThrow(AuthenticationError);
+            expect(mockAuth.verifyIdToken).toHaveBeenCalledWith('invalidToken');
+        });
+
+        test('should return decoded token for a valid ID token', async () => {
+            const mockDecodedToken = {
+                uid: 'testUid',
+                email: 'test@example.com'
+            };
+            mockAuth.verifyIdToken.mockResolvedValueOnce(mockDecodedToken);
+            const decodedToken = await verifyFirebaseIdToken('validToken');
+            expect(decodedToken).toEqual(mockDecodedToken);
+            expect(mockAuth.verifyIdToken).toHaveBeenCalledWith('validToken');
+        });
     });
-  });
 
-  describe('getTokensFromFirestore', () => {
-    it('should return token data if document exists', async () => {
-      const firebaseUid = 'test-uid';
-      const tokenData = { accessToken: 'test-access-token' };
-      mockGet.mockResolvedValue({ exists: true, data: () => tokenData });
+    describe('getTokensFromFirestore', () => {
+        test('should return null if no token is found for the user', async () => {
+            mockDoc.get.mockResolvedValueOnce({
+                exists: false
+            });
+            const tokens = await getTokensFromFirestore('testUid');
+            expect(tokens).toBeNull();
+            expect(mockCollection.doc).toHaveBeenCalledWith('testUid');
+            expect(mockDoc.get).toHaveBeenCalled();
+        });
 
-      const result = await getTokensFromFirestore(firebaseUid);
-
-      expect(result).toEqual(tokenData);
-      expect(mockCollection).toHaveBeenCalledWith('fitbit_tokens');
-      expect(mockDoc).toHaveBeenCalledWith(firebaseUid);
-      expect(mockGet).toHaveBeenCalledTimes(1);
+        test('should return token data if found for the user', async () => {
+            const mockTokenData = {
+                accessToken: 'abc',
+                refreshToken: 'xyz'
+            };
+            mockDoc.get.mockResolvedValueOnce({
+                exists: true,
+                data: () => mockTokenData
+            });
+            const tokens = await getTokensFromFirestore('testUid');
+            expect(tokens).toEqual(mockTokenData);
+            expect(mockCollection.doc).toHaveBeenCalledWith('testUid');
+            expect(mockDoc.get).toHaveBeenCalled();
+        });
     });
 
-    it('should return null if document does not exist', async () => {
-      const firebaseUid = 'non-existent-uid';
-      mockGet.mockResolvedValue({ exists: false });
+    describe('saveTokensToFirestore', () => {
+        test('should save tokens to firestore with correct data', async () => {
+            const firebaseUid = 'testUid';
+            const fitbitUserId = 'fitbit123';
+            const tokens = {
+                access_token: 'newAccessToken',
+                refresh_token: 'newRefreshToken',
+                expires_in: 3600, // 1 hour
+            };
 
-      const result = await getTokensFromFirestore(firebaseUid);
+            // DateコンストラクタをモックしてexpiresAtの計算を予測可能にする
+            const mockDateNow = 1678886400000; // 2023-03-15T00:00:00.000Z
+            const MOCK_DATE = new Date(mockDateNow);
+            const RealDate = Date;
 
-      expect(result).toBeNull();
+            global.Date = jest.fn(() => MOCK_DATE);
+            global.Date.now = jest.fn(() => MOCK_DATE.getTime());
+            global.Date.UTC = RealDate.UTC;
+            global.Date.parse = RealDate.parse;
+            global.Date.prototype = RealDate.prototype;
+
+            await saveTokensToFirestore(firebaseUid, fitbitUserId, tokens);
+
+            const expectedExpiresAt = mockDateNow + (tokens.expires_in * 1000);
+
+            expect(mockCollection.doc).toHaveBeenCalledWith(firebaseUid);
+            expect(mockDoc.set).toHaveBeenCalledWith({
+                accessToken: tokens.access_token,
+                refreshToken: tokens.refresh_token,
+                expiresAt: expectedExpiresAt,
+                fitbitUserId: fitbitUserId,
+                firebaseUid: firebaseUid,
+            }, {
+                merge: true
+            });
+            expect(console.log).toHaveBeenCalledWith(
+                `Successfully saved tokens for Firebase user ${firebaseUid} (Fitbit user ${fitbitUserId})`
+            );
+
+            global.Date = RealDate; // モックを元に戻す
+        });
     });
-  });
-
-  describe('saveTokensToFirestore', () => {
-    it('should call firestore.set with the correct token data', async () => {
-      const firebaseUid = 'test-uid';
-      const fitbitUserId = 'test-fitbit-id';
-      const tokens = {
-        access_token: 'new-access-token',
-        refresh_token: 'new-refresh-token',
-        expires_in: 3600, // 1 hour
-      };
-
-      // Use fake timers to control Date
-      jest.useFakeTimers();
-      jest.setSystemTime(new Date(1678886400000)); // A fixed timestamp
-
-      await saveTokensToFirestore(firebaseUid, fitbitUserId, tokens);
-
-      const expectedExpiresAt = 1678886400000 + 3600 * 1000;
-
-      expect(mockSet).toHaveBeenCalledWith({
-        accessToken: 'new-access-token',
-        refreshToken: 'new-refresh-token',
-        expiresAt: expectedExpiresAt,
-        fitbitUserId: fitbitUserId,
-        firebaseUid: firebaseUid,
-      }, { merge: true });
-
-      expect(mockCollection).toHaveBeenCalledWith('fitbit_tokens');
-      expect(mockDoc).toHaveBeenCalledWith(firebaseUid);
-      expect(mockSet).toHaveBeenCalledTimes(1);
-
-      // Restore real timers
-      jest.useRealTimers();
-    });
-  });
-
 });

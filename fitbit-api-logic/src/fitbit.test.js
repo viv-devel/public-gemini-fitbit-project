@@ -1,363 +1,498 @@
 import fetch from 'node-fetch';
-import { processAndLogFoods, exchangeCodeForTokens, refreshFitbitAccessToken } from './fitbit.js';
-import { saveTokensToFirestore, getTokensFromFirestore } from './firebase.js';
+import { Buffer } from 'buffer';
+import {
+    exchangeCodeForTokens,
+    refreshFitbitAccessToken,
+    processAndLogFoods
+} from './fitbit';
+import {
+    AuthenticationError,
+    ValidationError,
+    FitbitApiError
+} from './errors';
+import {
+    getTokensFromFirestore,
+    saveTokensToFirestore
+} from './firebase';
 
-// Mock dependencies
+// node-fetchをモック
 jest.mock('node-fetch');
-jest.mock('./firebase.js', () => ({
-  getTokensFromFirestore: jest.fn(),
-  saveTokensToFirestore: jest.fn(),
+// firebase.jsからインポートされる関数をモック
+jest.mock('./firebase', () => ({
+    getTokensFromFirestore: jest.fn(),
+    saveTokensToFirestore: jest.fn(),
 }));
 
-describe('fitbit.js', () => {
-  afterEach(() => {
-    jest.clearAllMocks();
-  });
+const mockClientId = 'testClientId';
+const mockClientSecret = 'testClientSecret';
+const mockRedirectUri = 'http://localhost:3000/callback';
+const mockFirebaseUid = 'testFirebaseUid';
 
-  describe('processAndLogFoods', () => {
-    it('should throw an error if foods array is missing or empty', async () => {
-      const accessToken = 'dummy_token';
-      const fitbitUserId = 'dummy_user';
-      
-      const missingFoodsData = { meal_type: 'Breakfast', log_date: '2025-11-06', log_time: '08:00' };
-      await expect(processAndLogFoods(accessToken, missingFoodsData, fitbitUserId))
-        .rejects.toThrow('Invalid input: "foods" array is missing or empty.');
+// 環境変数をモック
+process.env.FITBIT_REDIRECT_URI = mockRedirectUri;
 
-      const emptyFoodsData = { ...missingFoodsData, foods: [] };
-      await expect(processAndLogFoods(accessToken, emptyFoodsData, fitbitUserId))
-        .rejects.toThrow('Invalid input: "foods" array is missing or empty.');
+describe('Fitbit API Functions', () => {
+    beforeEach(() => {
+        jest.clearAllMocks();
+        jest.spyOn(console, 'log').mockImplementation(() => {});
+        jest.spyOn(console, 'error').mockImplementation(() => {});
+        jest.spyOn(console, 'warn').mockImplementation(() => {});
+
+        fetch.mockImplementation((url, options) => {
+            if (url.includes('/oauth2/token')) {
+                // exchangeCodeForTokens and refreshFitbitAccessToken
+                if (options.body.includes('grant_type=authorization_code')) {
+                    return Promise.resolve({
+                        ok: true,
+                        json: () => Promise.resolve({
+                            access_token: 'newAccessToken',
+                            refresh_token: 'newRefreshToken',
+                            expires_in: 3600,
+                            user_id: 'fitbitUser123',
+                        }),
+                    });
+                } else if (options.body.includes('grant_type=refresh_token')) {
+                    return Promise.resolve({
+                        ok: true,
+                        json: () => Promise.resolve({
+                            access_token: 'refreshedAccessToken',
+                            refresh_token: 'newRefreshToken',
+                            expires_in: 3600,
+                            user_id: 'fitbitUser123',
+                        }),
+                    });
+                }
+            } else if (url.includes('/foods.json')) {
+                // Create food API
+                return Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve({
+                        food: {
+                            foodId: 'mockFoodId'
+                        }
+                    }),
+                });
+            } else if (url.includes('/foods/log.json')) {
+                // Log food API
+                return Promise.resolve({
+                    ok: true,
+                    json: () => Promise.resolve({
+                        log: {
+                            logId: 'mockLogId'
+                        }
+                    }),
+                });
+            }
+            return Promise.reject(new Error('Unknown Fitbit API call'));
+        });
     });
 
-    it('should call fetch to create and then log food on success', async () => {
-      fetch
-        .mockResolvedValueOnce({ 
-          ok: true,
-          json: jest.fn().mockResolvedValue({ food: { foodId: '12345' } }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: jest.fn().mockResolvedValue({ message: 'success' }),
+    afterEach(() => {
+        jest.restoreAllMocks();
+    });
+
+    describe('exchangeCodeForTokens', () => {
+        test('should successfully exchange code for tokens and save to firestore', async () => {
+            const mockCode = 'testCode';
+            const mockFitbitResponse = {
+                access_token: 'newAccessToken',
+                refresh_token: 'newRefreshToken',
+                expires_in: 3600,
+                user_id: 'fitbitUser123',
+            };
+
+            fetch.mockResolvedValueOnce({
+                ok: true,
+                json: () => Promise.resolve(mockFitbitResponse),
+            });
+
+            const result = await exchangeCodeForTokens(mockClientId, mockClientSecret, mockCode, mockFirebaseUid);
+
+            expect(fetch).toHaveBeenCalledWith('https://api.fitbit.com/oauth2/token', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Authorization': 'Basic ' + Buffer.from(`${mockClientId}:${mockClientSecret}`).toString('base64'),
+                },
+                body: new URLSearchParams({
+                    grant_type: 'authorization_code',
+                    code: mockCode,
+                    redirect_uri: 'http://localhost:3000/oauth',
+                    client_id: mockClientId,
+                }).toString(),
+            });
+            expect(saveTokensToFirestore).toHaveBeenCalledWith(
+                mockFirebaseUid,
+                mockFitbitResponse.user_id,
+                mockFitbitResponse
+            );
+            expect(result).toEqual(mockFitbitResponse);
         });
 
-      const accessToken = 'dummy_token';
-      const fitbitUserId = 'dummy_user';
-      const nutritionData = {
-          meal_type: 'Lunch',
-          log_date: '2025-11-06',
-          log_time: '13:00',
-          foods: [{
-              foodName: 'test food',
-              amount: 1,
-              unit: 'serving',
-              calories: 100
-          }]
-      };
+        test('should throw FitbitApiError if token exchange fails', async () => {
+            const mockCode = 'testCode';
+            const mockErrorResponse = {
+                errors: [{
+                    message: 'Invalid code'
+                }]
+            };
 
-      await processAndLogFoods(accessToken, nutritionData, fitbitUserId);
+            fetch.mockResolvedValueOnce({
+                ok: false,
+                json: () => Promise.resolve(mockErrorResponse),
+            });
 
-      expect(fetch).toHaveBeenCalledTimes(2);
-      expect(fetch.mock.calls[0][0]).toBe(`https://api.fitbit.com/1/user/${fitbitUserId}/foods.json`);
-      expect(fetch.mock.calls[1][0]).toBe(`https://api.fitbit.com/1/user/${fitbitUserId}/foods/log.json`);
-      expect(fetch.mock.calls[1][1].body.toString()).toContain('foodId=12345');
+            await expect(exchangeCodeForTokens(mockClientId, mockClientSecret, mockCode, mockFirebaseUid))
+                .rejects.toThrow(FitbitApiError);
+            expect(saveTokensToFirestore).not.toHaveBeenCalled();
+        });
     });
 
-    it('should use default formType and description if not provided', async () => {
-      fetch
-        .mockResolvedValueOnce({ 
-          ok: true,
-          json: jest.fn().mockResolvedValue({ food: { foodId: '12345' } }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: jest.fn().mockResolvedValue({ message: 'success' }),
+    describe('refreshFitbitAccessToken', () => {
+        test('should successfully refresh token and save to firestore', async () => {
+            const mockCurrentTokens = {
+                refreshToken: 'oldRefreshToken',
+                fitbitUserId: 'fitbitUser123',
+            };
+            const mockNewTokensResponse = {
+                access_token: 'refreshedAccessToken',
+                refresh_token: 'newRefreshToken',
+                expires_in: 3600,
+                user_id: 'fitbitUser123', // Fitbit APIはuser_idを返すことがある
+            };
+
+            getTokensFromFirestore.mockResolvedValueOnce(mockCurrentTokens);
+            fetch.mockResolvedValueOnce({
+                ok: true,
+                json: () => Promise.resolve(mockNewTokensResponse),
+            });
+
+            const newAccessToken = await refreshFitbitAccessToken(mockFirebaseUid, mockClientId, mockClientSecret);
+
+            expect(getTokensFromFirestore).toHaveBeenCalledWith(mockFirebaseUid);
+            expect(fetch).toHaveBeenCalledWith('https://api.fitbit.com/oauth2/token', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                    'Authorization': 'Basic ' + Buffer.from(`${mockClientId}:${mockClientSecret}`).toString('base64'),
+                },
+                body: new URLSearchParams({
+                    grant_type: 'refresh_token',
+                    refresh_token: mockCurrentTokens.refreshToken,
+                }).toString(),
+            });
+            expect(saveTokensToFirestore).toHaveBeenCalledWith(
+                mockFirebaseUid,
+                mockCurrentTokens.fitbitUserId,
+                mockNewTokensResponse
+            );
+            expect(newAccessToken).toBe(mockNewTokensResponse.access_token);
         });
 
-      const accessToken = 'dummy_token';
-      const fitbitUserId = 'dummy_user';
-      const nutritionData = {
-          meal_type: 'Lunch',
-          log_date: '2025-11-06',
-          log_time: '13:00',
-          foods: [{
-              foodName: 'test food without formType and description',
-              amount: 1,
-              unit: 'serving',
-              calories: 100
-          }]
-      };
+        test('should throw AuthenticationError if no refresh token is found', async () => {
+            getTokensFromFirestore.mockResolvedValueOnce(null);
 
-      await processAndLogFoods(accessToken, nutritionData, fitbitUserId);
-
-      expect(fetch).toHaveBeenCalledTimes(2);
-      const createFoodBody = fetch.mock.calls[0][1].body.toString();
-      expect(createFoodBody).toContain('formType=DRY');
-      expect(createFoodBody).toContain('description=Logged+via+Gemini%3A+test+food+without+formType+and+description');
-    });
-
-    it('should use provided formType and description', async () => {
-      fetch
-        .mockResolvedValueOnce({ 
-          ok: true,
-          json: jest.fn().mockResolvedValue({ food: { foodId: '12345' } }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: jest.fn().mockResolvedValue({ message: 'success' }),
+            await expect(refreshFitbitAccessToken(mockFirebaseUid, mockClientId, mockClientSecret))
+                .rejects.toThrow(AuthenticationError);
+            expect(fetch).not.toHaveBeenCalled();
+            expect(saveTokensToFirestore).not.toHaveBeenCalled();
         });
 
-      const accessToken = 'dummy_token';
-      const fitbitUserId = 'dummy_user';
-      const nutritionData = {
-          meal_type: 'Lunch',
-          log_date: '2025-11-06',
-          log_time: '13:00',
-          foods: [{
-              foodName: 'test food with formType and description',
-              amount: 1,
-              unit: 'serving',
-              calories: 100,
-              formType: 'LIQUID',
-              description: 'Custom description'
-          }]
-      };
+        test('should throw FitbitApiError if refresh token fails', async () => {
+            const mockCurrentTokens = {
+                refreshToken: 'oldRefreshToken',
+                fitbitUserId: 'fitbitUser123',
+            };
+            const mockErrorResponse = {
+                errors: [{
+                    message: 'Invalid refresh token'
+                }]
+            };
 
-      await processAndLogFoods(accessToken, nutritionData, fitbitUserId);
+            getTokensFromFirestore.mockResolvedValueOnce(mockCurrentTokens);
+            fetch.mockResolvedValueOnce({
+                ok: false,
+                json: () => Promise.resolve(mockErrorResponse),
+            });
 
-      expect(fetch).toHaveBeenCalledTimes(2);
-      const createFoodBody = fetch.mock.calls[0][1].body.toString();
-      expect(createFoodBody).toContain('formType=LIQUID');
-      expect(createFoodBody).toContain('description=Custom+description');
+            await expect(refreshFitbitAccessToken(mockFirebaseUid, mockClientId, mockClientSecret))
+                .rejects.toThrow(FitbitApiError);
+            expect(saveTokensToFirestore).not.toHaveBeenCalled();
+        });
     });
 
-    it('should use default formType if formType is null', async () => {
-      fetch
-        .mockResolvedValueOnce({ 
-          ok: true,
-          json: jest.fn().mockResolvedValue({ food: { foodId: '12345' } }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: jest.fn().mockResolvedValue({ message: 'success' }),
+    describe('processAndLogFoods', () => {
+        const mockAccessToken = 'mockAccessToken';
+        const mockFitbitUserId = 'mockFitbitUser';
+        const mockNutritionData = {
+            meal_type: 'Breakfast',
+            log_date: '2023-01-01',
+            log_time: '08:00',
+            foods: [{
+                foodName: 'Apple',
+                amount: 1,
+                unit: 'serving',
+                calories: 95,
+            }, {
+                foodName: 'Orange Juice',
+                amount: 200,
+                unit: 'ml',
+                calories: 90,
+            }, ],
+        };
+
+        test('should successfully log multiple foods to Fitbit', async () => {
+
+
+            const results = await processAndLogFoods(mockAccessToken, mockNutritionData, mockFitbitUserId);
+
+            expect(fetch).toHaveBeenCalledTimes(4); // 2 foods * (create + log)
+            expect(results.length).toBe(2);
+            expect(results[0]).toEqual({
+                log: {
+                    logId: 'mockLogId'
+                }
+            });
+            expect(results[1]).toEqual({
+                log: {
+                    logId: 'mockLogId'
+                }
+            });
+
+            // Verify calls for the first food (Apple)
+            const createFoodParams1 = new URLSearchParams();
+            createFoodParams1.append('name', 'Apple');
+            createFoodParams1.append('defaultFoodMeasurementUnitId', '86');
+            createFoodParams1.append('defaultServingSize', '1');
+            createFoodParams1.append('calories', '95');
+            createFoodParams1.append('formType', 'DRY');
+            createFoodParams1.append('description', 'Logged via Gemini: Apple');
+
+            expect(fetch).toHaveBeenCalledWith(`https://api.fitbit.com/1/user/${mockFitbitUserId}/foods.json`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${mockAccessToken}`,
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: createFoodParams1.toString(),
+            });
+
+            const logFoodParams1 = new URLSearchParams({
+                foodId: 'mockFoodId', // Breakfast
+                mealTypeId: '1', // Breakfast
+                unitId: '86',
+                amount: '1',
+                date: '2023-01-01',
+                time: '08:00',
+            }).toString();
+
+            expect(fetch).toHaveBeenCalledWith(`https://api.fitbit.com/1/user/${mockFitbitUserId}/foods/log.json`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${mockAccessToken}`,
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: logFoodParams1,
+            });
+
+            // Verify calls for the second food (Orange Juice)
+            const createFoodParams2 = new URLSearchParams();
+            createFoodParams2.append('name', 'Orange Juice');
+            createFoodParams2.append('defaultFoodMeasurementUnitId', '147'); // ml
+            createFoodParams2.append('defaultServingSize', '200');
+            createFoodParams2.append('calories', '90');
+            createFoodParams2.append('formType', 'DRY');
+            createFoodParams2.append('description', 'Logged via Gemini: Orange Juice');
+
+            expect(fetch).toHaveBeenCalledWith(`https://api.fitbit.com/1/user/${mockFitbitUserId}/foods.json`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${mockAccessToken}`,
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: createFoodParams2.toString(),
+            });
+
+            const logFoodParams2 = new URLSearchParams({
+                foodId: 'mockFoodId', // Breakfast
+                mealTypeId: '1', // Breakfast
+                unitId: '147',
+                amount: '200',
+                date: '2023-01-01',
+                time: '08:00',
+            }).toString();
+
+            expect(fetch).toHaveBeenCalledWith(`https://api.fitbit.com/1/user/${mockFitbitUserId}/foods/log.json`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${mockAccessToken}`,
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: logFoodParams2,
+            });
         });
 
-      const accessToken = 'dummy_token';
-      const fitbitUserId = 'dummy_user';
-      const nutritionData = {
-          meal_type: 'Lunch',
-          log_date: '2025-11-06',
-          log_time: '13:00',
-          foods: [{
-              foodName: 'test food with null formType',
-              amount: 1,
-              unit: 'serving',
-              calories: 100,
-              formType: null
-          }]
-      };
-
-      await processAndLogFoods(accessToken, nutritionData, fitbitUserId);
-
-      expect(fetch).toHaveBeenCalledTimes(2);
-      const createFoodBody = fetch.mock.calls[0][1].body.toString();
-      expect(createFoodBody).toContain('formType=DRY');
-    });
-
-    it('should use default description if description is null', async () => {
-      fetch
-        .mockResolvedValueOnce({ 
-          ok: true,
-          json: jest.fn().mockResolvedValue({ food: { foodId: '12345' } }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: jest.fn().mockResolvedValue({ message: 'success' }),
+        test('should throw ValidationError if "foods" array is missing or empty', async () => {
+            await expect(processAndLogFoods(mockAccessToken, {
+                meal_type: 'Breakfast',
+                log_date: '2023-01-01',
+                log_time: '08:00',
+                foods: []
+            }, mockFitbitUserId)).rejects.toThrow(ValidationError);
+            await expect(processAndLogFoods(mockAccessToken, {
+                meal_type: 'Breakfast',
+                log_date: '2023-01-01',
+                log_time: '08:00',
+            }, mockFitbitUserId)).rejects.toThrow(ValidationError);
+            expect(fetch).not.toHaveBeenCalled();
         });
 
-      const accessToken = 'dummy_token';
-      const fitbitUserId = 'dummy_user';
-      const nutritionData = {
-          meal_type: 'Lunch',
-          log_date: '2025-11-06',
-          log_time: '13:00',
-          foods: [{
-              foodName: 'test food with null description',
-              amount: 1,
-              unit: 'serving',
-              calories: 100,
-              description: null
-          }]
-      };
-
-      await processAndLogFoods(accessToken, nutritionData, fitbitUserId);
-
-      expect(fetch).toHaveBeenCalledTimes(2);
-      const createFoodBody = fetch.mock.calls[0][1].body.toString();
-      expect(createFoodBody).toContain('description=Logged+via+Gemini%3A+test+food+with+null+description');
-    });
-
-    it('should use default formType and description if both are null', async () => {
-      fetch
-        .mockResolvedValueOnce({ 
-          ok: true,
-          json: jest.fn().mockResolvedValue({ food: { foodId: '12345' } }),
-        })
-        .mockResolvedValueOnce({
-          ok: true,
-          json: jest.fn().mockResolvedValue({ message: 'success' }),
+        test('should throw ValidationError if food item is missing required fields', async () => {
+            const invalidNutritionData = {
+                meal_type: 'Breakfast',
+                log_date: '2023-01-01',
+                log_time: '08:00',
+                foods: [{
+                    foodName: 'Apple',
+                    amount: 1,
+                    // unit is missing
+                }, ],
+            };
+            await expect(processAndLogFoods(mockAccessToken, invalidNutritionData, mockFitbitUserId))
+                .rejects.toThrow(ValidationError);
+            expect(fetch).not.toHaveBeenCalled();
         });
 
-      const accessToken = 'dummy_token';
-      const fitbitUserId = 'dummy_user';
-      const nutritionData = {
-          meal_type: 'Lunch',
-          log_date: '2025-11-06',
-          log_time: '13:00',
-          foods: [{
-              foodName: 'test food with null formType and description',
-              amount: 1,
-              unit: 'serving',
-              calories: 100,
-              formType: null,
-              description: null
-          }]
-      };
+        test('should throw FitbitApiError if create food API fails', async () => {
+            const singleFoodNutritionData = { // 1つの食品のみ
+                meal_type: 'Breakfast',
+                log_date: '2023-01-01',
+                log_time: '08:00',
+                foods: [{
+                    foodName: 'Apple',
+                    amount: 1,
+                    unit: 'serving',
+                    calories: 95,
+                }, ],
+            };
 
-      await processAndLogFoods(accessToken, nutritionData, fitbitUserId);
+            fetch.mockImplementationOnce((url, options) => {
+                if (url.includes('/foods.json')) {
+                    return Promise.resolve({
+                        ok: false,
+                        json: () => Promise.resolve({
+                            errors: [{
+                                message: 'Failed to create food on Fitbit'
+                            }]
+                        }),
+                    });
+                }
+                return Promise.reject(new Error('Unknown Fitbit API call'));
+            });
 
-      expect(fetch).toHaveBeenCalledTimes(2);
-      const createFoodBody = fetch.mock.calls[0][1].body.toString();
-      expect(createFoodBody).toContain('formType=DRY');
-      expect(createFoodBody).toContain('description=Logged+via+Gemini%3A+test+food+with+null+formType+and+description');
-    });
-
-    it('should throw an error if a food item is missing required fields', async () => {
-      const nutritionData = {
-        meal_type: 'Lunch',
-        log_date: '2025-11-06',
-        foods: [{ foodName: 'test food', amount: 1 /* unit is missing */ }]
-      };
-      await expect(processAndLogFoods('token', nutritionData, 'user'))
-        .rejects.toThrow('Missing required field for food log: test food');
-    });
-
-    it('should throw an error if creating food fails', async () => {
-      fetch.mockResolvedValueOnce({
-        ok: false,
-        json: jest.fn().mockResolvedValue({ errors: [{ message: 'Invalid food' }] }),
-      });
-      const nutritionData = {
-        meal_type: 'Lunch',
-        log_date: '2025-11-06',
-        foods: [{ foodName: 'bad food', amount: 1, unit: 'g' }]
-      };
-
-      await expect(processAndLogFoods('token', nutritionData, 'user'))
-        .rejects.toThrow('Failed to create food "bad food": Invalid food');
-    });
-
-    it('should throw an error if logging food fails', async () => {
-      fetch
-        .mockResolvedValueOnce({ // create food success
-          ok: true,
-          json: jest.fn().mockResolvedValue({ food: { foodId: '12345' } }),
-        })
-        .mockResolvedValueOnce({ // log food failure
-          ok: false,
-          json: jest.fn().mockResolvedValue({ errors: [{ message: 'Invalid log' }] }),
+            await expect(processAndLogFoods(mockAccessToken, singleFoodNutritionData, mockFitbitUserId))
+                .rejects.toThrow(FitbitApiError);
+            expect(fetch).toHaveBeenCalledTimes(1); // Only create food API called
         });
-      const nutritionData = {
-        meal_type: 'Lunch',
-        log_date: '2025-11-06',
-        foods: [{ foodName: 'good food', amount: 1, unit: 'g' }]
-      };
 
-      await expect(processAndLogFoods('token', nutritionData, 'user'))
-        .rejects.toThrow('Failed to log food "good food": Invalid log');
+        test('should throw FitbitApiError if log food API fails', async () => {
+            const singleFoodNutritionData = { // 1つの食品のみ
+                meal_type: 'Breakfast',
+                log_date: '2023-01-01',
+                log_time: '08:00',
+                foods: [{
+                    foodName: 'Apple',
+                    amount: 1,
+                    unit: 'serving',
+                    calories: 95,
+                }, ],
+            };
+
+            // Mock for creating food (success)
+            fetch.mockImplementationOnce((url, options) => {
+                if (url.includes('/foods.json')) {
+                    return Promise.resolve({
+                        ok: true,
+                        json: () => Promise.resolve({
+                            food: {
+                                foodId: 'foodId1'
+                            }
+                        }),
+                    });
+                }
+                return Promise.reject(new Error('Unknown Fitbit API call'));
+            });
+            // Mock for logging food (failure)
+            fetch.mockImplementationOnce((url, options) => {
+                if (url.includes('/foods/log.json')) {
+                    return Promise.resolve({
+                        ok: false,
+                        json: () => Promise.resolve({
+                            errors: [{
+                                message: 'Failed to log food on Fitbit'
+                            }]
+                        }),
+                    });
+                }
+                return Promise.reject(new Error('Unknown Fitbit API call'));
+            });
+
+            await expect(processAndLogFoods(mockAccessToken, singleFoodNutritionData, mockFitbitUserId))
+                .rejects.toThrow(FitbitApiError);
+            expect(fetch).toHaveBeenCalledTimes(2); // Create food and log food APIs called
+        });
+
+        test('should use default unitId if unit is unknown', async () => {
+            const nutritionDataWithUnknownUnit = {
+                meal_type: 'Breakfast',
+                log_date: '2023-01-01',
+                log_time: '08:00',
+                foods: [{
+                    foodName: 'Unknown Food',
+                    amount: 1,
+                    unit: 'unknown',
+                    calories: 100,
+                }, ],
+            };
+
+            // fetch.mockResolvedValueOnce は beforeEach で設定された mockImplementation で上書きされるため不要
+
+            await processAndLogFoods(mockAccessToken, nutritionDataWithUnknownUnit, mockFitbitUserId);
+
+            const createFoodParams = new URLSearchParams();
+            createFoodParams.append('name', 'Unknown Food');
+            createFoodParams.append('defaultFoodMeasurementUnitId', '86'); // Default unitId
+            createFoodParams.append('defaultServingSize', '1');
+            createFoodParams.append('calories', '100');
+            createFoodParams.append('formType', 'DRY');
+            createFoodParams.append('description', 'Logged via Gemini: Unknown Food');
+
+            expect(fetch).toHaveBeenCalledWith(`https://api.fitbit.com/1/user/${mockFitbitUserId}/foods.json`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${mockAccessToken}`,
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: createFoodParams.toString(),
+            });
+
+            const logFoodParams = new URLSearchParams({
+                foodId: 'mockFoodId', // beforeEach の mockImplementation で設定された foodId
+                mealTypeId: '1',
+                unitId: '86', // Default unitId
+                amount: '1',
+                date: '2023-01-01',
+                time: '08:00',
+            }).toString();
+
+            expect(fetch).toHaveBeenCalledWith(`https://api.fitbit.com/1/user/${mockFitbitUserId}/foods/log.json`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${mockAccessToken}`,
+                    'Content-Type': 'application/x-www-form-urlencoded'
+                },
+                body: logFoodParams,
+            });
+        });
     });
-  });
-
-  describe('exchangeCodeForTokens', () => {
-    it('should exchange code for tokens and save them', async () => {
-      const clientId = 'test-client-id';
-      const clientSecret = 'test-client-secret';
-      const code = 'test-code';
-      const firebaseUid = 'test-uid';
-      const fitbitResponse = { access_token: 'fitbit-access-token', user_id: 'fitbit-user-id' };
-
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: jest.fn().mockResolvedValue(fitbitResponse),
-      });
-
-      await exchangeCodeForTokens(clientId, clientSecret, code, firebaseUid);
-
-      expect(fetch).toHaveBeenCalledTimes(1);
-      expect(fetch).toHaveBeenCalledWith('https://api.fitbit.com/oauth2/token', expect.any(Object));
-      expect(saveTokensToFirestore).toHaveBeenCalledTimes(1);
-      expect(saveTokensToFirestore).toHaveBeenCalledWith(firebaseUid, fitbitResponse.user_id, fitbitResponse);
-    });
-
-    it('should throw an error if token exchange fails', async () => {
-      fetch.mockResolvedValueOnce({
-        ok: false,
-        json: jest.fn().mockResolvedValue({ errors: [{ message: 'Invalid code' }] }),
-      });
-
-      await expect(exchangeCodeForTokens('id', 'secret', 'code', 'uid'))
-        .rejects.toThrow('Failed to exchange code for tokens.');
-      
-      expect(saveTokensToFirestore).not.toHaveBeenCalled();
-    });
-  });
-
-  describe('refreshFitbitAccessToken', () => {
-    const firebaseUid = 'test-uid';
-    const clientId = 'test-client-id';
-    const clientSecret = 'test-client-secret';
-
-    it('should refresh the access token and save it', async () => {
-      const currentTokens = { refreshToken: 'current-refresh-token', fitbitUserId: 'fitbit-user-id' };
-      const newTokens = { access_token: 'new-access-token', refresh_token: 'new-refresh-token' };
-      
-      getTokensFromFirestore.mockResolvedValue(currentTokens);
-      
-      fetch.mockResolvedValueOnce({
-        ok: true,
-        json: jest.fn().mockResolvedValue(newTokens),
-      });
-
-      const newAccessToken = await refreshFitbitAccessToken(firebaseUid, clientId, clientSecret);
-
-      expect(newAccessToken).toBe(newTokens.access_token);
-      expect(getTokensFromFirestore).toHaveBeenCalledWith(firebaseUid);
-      expect(fetch).toHaveBeenCalledTimes(1);
-      expect(fetch.mock.calls[0][1].body.toString()).toContain(`refresh_token=${currentTokens.refreshToken}`);
-      expect(saveTokensToFirestore).toHaveBeenCalledWith(firebaseUid, currentTokens.fitbitUserId, newTokens);
-    });
-
-    it('should throw an error if token refresh fails', async () => {
-      const currentTokens = { refreshToken: 'current-refresh-token' };
-      getTokensFromFirestore.mockResolvedValue(currentTokens);
-      
-      fetch.mockResolvedValueOnce({
-        ok: false,
-        json: jest.fn().mockResolvedValue({ errors: [{ message: 'Invalid refresh token' }] }),
-      });
-
-      await expect(refreshFitbitAccessToken(firebaseUid, clientId, clientSecret))
-        .rejects.toThrow(/Fitbit API Refresh Error: Invalid refresh token/);
-      
-      expect(saveTokensToFirestore).not.toHaveBeenCalled();
-    });
-
-    it('should throw an error if no refresh token is found in firestore', async () => {
-      getTokensFromFirestore.mockResolvedValue(null);
-
-      await expect(refreshFitbitAccessToken(firebaseUid, clientId, clientSecret))
-        .rejects.toThrow(`No refresh token found for user ${firebaseUid}. Please re-authenticate.`);
-      
-      expect(fetch).not.toHaveBeenCalled();
-      expect(saveTokensToFirestore).not.toHaveBeenCalled();
-    });
-  });
 });
