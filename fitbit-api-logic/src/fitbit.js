@@ -166,13 +166,13 @@ export async function processAndLogFoods(accessToken, nutritionData, fitbitUserI
             body: createFoodParams.toString(),
         });
 
-        const createFoodResult = await createFoodResponse.json(); // ここで一度だけjsonをパース
-
         if (!createFoodResponse.ok) {
-            console.error('Fitbit create food error response:', createFoodResult);
-            const errorMessage = createFoodResult.errors && createFoodResult.errors[0] ? createFoodResult.errors[0].message : 'Unknown error';
+            const errorData = await createFoodResponse.json();
+            console.error('Fitbit create food error response:', errorData);
+            const errorMessage = errorData.errors && errorData.errors[0] ? errorData.errors[0].message : 'Unknown error';
             throw new FitbitApiError(`Failed to create food "${food.foodName}": ${errorMessage}`);
         }
+        const createFoodResult = await createFoodResponse.json(); // この行を追加
         const foodId = createFoodResult.food.foodId; // パース済みの結果を使用
         console.log(`Successfully created food: ${food.foodName} (Food ID: ${foodId})`);
         createdFoods.push({ ...food, foodId, unitId });

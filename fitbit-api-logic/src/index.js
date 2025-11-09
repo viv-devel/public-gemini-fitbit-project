@@ -11,20 +11,23 @@ import {
     processAndLogFoods,
 } from './fitbit.js';
 
+// 必要な環境変数のチェック
+if (!process.env.GCP_PROJECT) {
+    throw new Error('GCP_PROJECT 環境変数が設定されていません。Secret Manager へのアクセスには必須です。');
+}
+if (!process.env.FITBIT_REDIRECT_URI) {
+    throw new Error('FITBIT_REDIRECT_URI 環境変数が設定されていません。');
+}
+
+// アプリケーション認証情報用のSecret Managerシークレット名
+const PROJECT_ID = process.env.GCP_PROJECT;
+const FITBIT_CLIENT_ID_NAME = `projects/${PROJECT_ID}/secrets/FITBIT_CLIENT_ID/versions/latest`;
+const FITBIT_CLIENT_SECRET_NAME = `projects/${PROJECT_ID}/secrets/FITBIT_CLIENT_SECRET/versions/latest`;
+
+/**
+ * メインのCloud Function
+ */
 export const fitbitWebhookHandler = async (req, res) => {
-    // 必要な環境変数のチェック
-    if (!process.env.GCP_PROJECT) {
-        throw new Error('GCP_PROJECT 環境変数が設定されていません。Secret Manager へのアクセスには必須です。');
-    }
-    if (!process.env.FITBIT_REDIRECT_URI) {
-        throw new Error('FITBIT_REDIRECT_URI 環境変数が設定されていません。');
-    }
-
-    // アプリケーション認証情報用のSecret Managerシークレット名
-    const PROJECT_ID = process.env.GCP_PROJECT;
-    const FITBIT_CLIENT_ID_NAME = `projects/${PROJECT_ID}/secrets/FITBIT_CLIENT_ID/versions/latest`;
-    const FITBIT_CLIENT_SECRET_NAME = `projects/${PROJECT_ID}/secrets/FITBIT_CLIENT_SECRET/versions/latest`;
-
     res.set('Access-Control-Allow-Origin', '*');
     res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
     res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');

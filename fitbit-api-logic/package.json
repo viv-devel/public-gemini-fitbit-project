@@ -7,7 +7,6 @@
   "scripts": {
     "start": "functions-framework --target=fitbitWebhookHandler",
     "test": "cross-env GCP_PROJECT=test-project FITBIT_REDIRECT_URI=http://localhost:3000/oauth jest",
-    "test:coverage": "cross-env GCP_PROJECT=test-project FITBIT_REDIRECT_URI=http://localhost:3000/oauth jest --coverage",
     "lint": "eslint ."
   },
   "dependencies": {

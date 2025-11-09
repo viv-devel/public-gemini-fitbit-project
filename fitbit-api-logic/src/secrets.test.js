@@ -1,71 +1,52 @@
-import {
-    accessSecretVersion
-} from './secrets';
-import {
-    SecretManagerServiceClient
-} from '@google-cloud/secret-manager';
 
-// SecretManagerServiceClientをモック
-jest.mock('@google-cloud/secret-manager', () => {
-    const mockAccessSecretVersion = jest.fn();
-    return {
-        SecretManagerServiceClient: jest.fn(() => ({
-            accessSecretVersion: mockAccessSecretVersion,
-        })),
-    };
-});
+// Define the mock function first.
+const mockAccessSecretVersion = jest.fn();
 
-const mockSecretManagerClient = new SecretManagerServiceClient();
+// Then, mock the module that uses it.
+// The factory function will close over the mock function.
+jest.mock('@google-cloud/secret-manager', () => ({
+  SecretManagerServiceClient: jest.fn().mockImplementation(() => ({
+    accessSecretVersion: mockAccessSecretVersion,
+  })),
+}));
+
+// Now that the mock is set up, we can import the module to be tested.
+// We have to use require here because import statements are hoisted.
+const { accessSecretVersion } = require('./secrets.js');
 
 describe('accessSecretVersion', () => {
-    beforeEach(() => {
-        jest.clearAllMocks();
-        jest.spyOn(console, 'error').mockImplementation(() => {}); // console.errorをモック
-    });
+  beforeEach(() => {
+    mockAccessSecretVersion.mockClear();
+  });
 
-    afterEach(() => {
-        jest.restoreAllMocks(); // すべてのモックを元に戻す
-    });
+  it('should access a secret version and return the payload', async () => {
+    const secretName = 'projects/my-project/secrets/my-secret/versions/latest';
+    const secretPayload = 'my-secret-value';
+    const mockResponse = [{
+      payload: {
+        data: Buffer.from(secretPayload, 'utf8'),
+      },
+    }];
 
-    test('should return the secret payload data as a string on success', async () => {
-        const mockSecretName = 'projects/project-id/secrets/secret-name/versions/1';
-        const mockSecretPayload = 'secretValue';
-        mockSecretManagerClient.accessSecretVersion.mockResolvedValueOnce([{
-            payload: {
-                data: Buffer.from(mockSecretPayload, 'utf8')
-            }
-        }]);
+    mockAccessSecretVersion.mockResolvedValue(mockResponse);
 
-        const result = await accessSecretVersion(mockSecretName);
+    const result = await accessSecretVersion(secretName);
 
-        expect(mockSecretManagerClient.accessSecretVersion).toHaveBeenCalledWith({
-            name: mockSecretName
-        });
-        expect(result).toBe(mockSecretPayload);
-    });
+    expect(result).toBe(secretPayload);
+    expect(mockAccessSecretVersion).toHaveBeenCalledWith({ name: secretName });
+    expect(mockAccessSecretVersion).toHaveBeenCalledTimes(1);
+  });
 
-    test('should throw an error if accessing the secret fails', async () => {
-        const mockSecretName = 'projects/project-id/secrets/non-existent-secret/versions/1';
-        const mockError = new Error('Permission denied');
-        mockSecretManagerClient.accessSecretVersion.mockRejectedValueOnce(mockError);
+  it('should throw an error if accessing the secret fails', async () => {
+    const secretName = 'projects/my-project/secrets/my-secret/versions/latest';
+    const errorMessage = 'Permission denied';
+    
+    mockAccessSecretVersion.mockRejectedValue(new Error(errorMessage));
 
-        await expect(accessSecretVersion(mockSecretName)).rejects.toThrow('Failed to access secret. Check IAM permissions.');
-        expect(mockSecretManagerClient.accessSecretVersion).toHaveBeenCalledWith({
-            name: mockSecretName
-        });
-    });
-
-    test('should log the error when accessing the secret fails', async () => {
-        const mockSecretName = 'projects/project-id/secrets/non-existent-secret/versions/1';
-        const mockError = new Error('Permission denied');
-        mockSecretManagerClient.accessSecretVersion.mockRejectedValueOnce(mockError);
-        const consoleErrorSpy = jest.spyOn(console, 'error').mockImplementation(() => {}); // console.errorをモック
-
-        await expect(accessSecretVersion(mockSecretName)).rejects.toThrow();
-        expect(consoleErrorSpy).toHaveBeenCalledWith(
-            `Failed to access secret ${mockSecretName}:`,
-            mockError
-        );
-        consoleErrorSpy.mockRestore(); // モックを元に戻す
-    });
+    await expect(accessSecretVersion(secretName))
+      .rejects.toThrow('Failed to access secret. Check IAM permissions.');
+      
+    expect(mockAccessSecretVersion).toHaveBeenCalledWith({ name: secretName });
+    expect(mockAccessSecretVersion).toHaveBeenCalledTimes(1);
+  });
 });

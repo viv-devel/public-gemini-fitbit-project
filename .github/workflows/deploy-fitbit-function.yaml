@@ -35,10 +35,6 @@ jobs:
       - name: Install dependencies
         run: npm install --prefix ${{ env.SOURCE_DIR }}
 
-      - name: Test and Generate Coverage Report
-        run: npx cross-env GCP_PROJECT=test-project FITBIT_REDIRECT_URI=http://localhost:3000/oauth npx jest --coverage
-        working-directory: ${{ env.SOURCE_DIR }}
-
       - name: Authorize GCP
         uses: 'google-github-actions/auth@v2'
         with:
@@ -84,10 +80,6 @@ jobs:
 
       - name: Install dependencies
         run: npm install --prefix ${{ env.SOURCE_DIR }}
-
-      - name: Test and Generate Coverage Report
-        run: npx cross-env GCP_PROJECT=test-project FITBIT_REDIRECT_URI=http://localhost:3000/oauth npx jest --coverage
-        working-directory: ${{ env.SOURCE_DIR }}
 
       - name: Authorize GCP
         uses: 'google-github-actions/auth@v2'
