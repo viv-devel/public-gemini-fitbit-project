@@ -22,3 +22,6 @@ yarn-error.log*
 
 # ローカルテスト用のスクリプトを除外
 /fitbit-api-logic/test-secret.js
+
+# テストカバレッジ
+/fitbit-api-logic/coverage
