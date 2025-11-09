@@ -243,19 +243,25 @@ describe('Fitbit API Functions', () => {
 
         test('should successfully log multiple foods to Fitbit', async () => {
 
-
+            // fetchのモックをテストケース内で再定義して、呼び出し順を制御
+            fetch
+                .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ food: { foodId: 'mockFoodId_Apple' } }) }) // Create Apple
+                .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ food: { foodId: 'mockFoodId_Juice' } }) }) // Create Orange Juice
+                .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ log: { logId: 'mockLogId_Apple' } }) })   // Log Apple
+                .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ log: { logId: 'mockLogId_Juice' } }) });  // Log Orange Juice
+            
             const results = await processAndLogFoods(mockAccessToken, mockNutritionData, mockFitbitUserId);
 
             expect(fetch).toHaveBeenCalledTimes(4); // 2 foods * (create + log)
             expect(results.length).toBe(2);
             expect(results[0]).toEqual({
                 log: {
-                    logId: 'mockLogId'
+                    logId: 'mockLogId_Apple'
                 }
             });
             expect(results[1]).toEqual({
                 log: {
-                    logId: 'mockLogId'
+                    logId: 'mockLogId_Juice'
                 }
             });
 
@@ -278,7 +284,7 @@ describe('Fitbit API Functions', () => {
             });
 
             const logFoodParams1 = new URLSearchParams({
-                foodId: 'mockFoodId', // Breakfast
+                foodId: 'mockFoodId_Apple',
                 mealTypeId: '1', // Breakfast
                 unitId: '86',
                 amount: '1',
@@ -314,7 +320,7 @@ describe('Fitbit API Functions', () => {
             });
 
             const logFoodParams2 = new URLSearchParams({
-                foodId: 'mockFoodId', // Breakfast
+                foodId: 'mockFoodId_Juice',
                 mealTypeId: '1', // Breakfast
                 unitId: '147',
                 amount: '200',
@@ -376,20 +382,16 @@ describe('Fitbit API Functions', () => {
                 }, ],
             };
 
-            fetch.mockImplementationOnce((url, options) => {
-                if (url.includes('/foods.json')) {
-                    return Promise.resolve({
-                        ok: false,
-                        json: () => Promise.resolve({
-                            errors: [{
-                                message: 'Failed to create food on Fitbit'
-                            }]
-                        }),
-                    });
-                }
-                return Promise.reject(new Error('Unknown Fitbit API call'));
+            // foods.json (create food) の呼び出しで失敗するように設定
+            fetch.mockResolvedValueOnce({
+                ok: false,
+                json: () => Promise.resolve({
+                    errors: [{
+                        message: 'Failed to create food on Fitbit'
+                    }]
+                }),
             });
-
+            
             await expect(processAndLogFoods(mockAccessToken, singleFoodNutritionData, mockFitbitUserId))
                 .rejects.toThrow(FitbitApiError);
             expect(fetch).toHaveBeenCalledTimes(1); // Only create food API called
@@ -409,37 +411,39 @@ describe('Fitbit API Functions', () => {
             };
 
             // Mock for creating food (success)
-            fetch.mockImplementationOnce((url, options) => {
-                if (url.includes('/foods.json')) {
-                    return Promise.resolve({
-                        ok: true,
-                        json: () => Promise.resolve({
-                            food: {
-                                foodId: 'foodId1'
-                            }
-                        }),
-                    });
-                }
-                return Promise.reject(new Error('Unknown Fitbit API call'));
-            });
+            fetch.mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ food: { foodId: 'foodId1' } }) });
             // Mock for logging food (failure)
-            fetch.mockImplementationOnce((url, options) => {
-                if (url.includes('/foods/log.json')) {
-                    return Promise.resolve({
-                        ok: false,
-                        json: () => Promise.resolve({
-                            errors: [{
-                                message: 'Failed to log food on Fitbit'
-                            }]
-                        }),
-                    });
-                }
-                return Promise.reject(new Error('Unknown Fitbit API call'));
+            fetch.mockResolvedValueOnce({
+                ok: false,
+                json: () => Promise.resolve({
+                    errors: [{
+                        message: 'Failed to log food on Fitbit'
+                    }]
+                }),
             });
 
             await expect(processAndLogFoods(mockAccessToken, singleFoodNutritionData, mockFitbitUserId))
                 .rejects.toThrow(FitbitApiError);
             expect(fetch).toHaveBeenCalledTimes(2); // Create food and log food APIs called
+        });
+
+        test('should stop processing if a subsequent food creation fails', async () => {
+            // 1件目の作成は成功、2件目の作成は失敗するようにfetchをモック
+            fetch
+                .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ food: { foodId: 'mockFoodId_Apple' } }) }) // 1. Create Apple (Success)
+                .mockResolvedValueOnce({ // 2. Create Orange Juice (Failure)
+                    ok: false,
+                    json: () => Promise.resolve({ errors: [{ message: 'Failed on second item' }] }),
+                });
+
+            // 2つの食品を含むデータで関数を実行
+            await expect(processAndLogFoods(mockAccessToken, mockNutritionData, mockFitbitUserId))
+                .rejects.toThrow('Failed to create food "Orange Juice": Failed on second item');
+
+            // 1回目の作成(成功)と2回目の作成(失敗)で、APIは2回呼ばれる
+            expect(fetch).toHaveBeenCalledTimes(2);
+            // log food APIは一度も呼ばれないことを確認
+            expect(fetch).not.toHaveBeenCalledWith(expect.stringContaining('/foods/log.json'), expect.any(Object));
         });
 
         test('should use default unitId if unit is unknown', async () => {
@@ -455,7 +459,10 @@ describe('Fitbit API Functions', () => {
                 }, ],
             };
 
-            // fetch.mockResolvedValueOnce は beforeEach で設定された mockImplementation で上書きされるため不要
+            fetch
+                .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ food: { foodId: 'mockFoodId_Unknown' } }) })
+                .mockResolvedValueOnce({ ok: true, json: () => Promise.resolve({ log: { logId: 'mockLogId_Unknown' } }) });
+
 
             await processAndLogFoods(mockAccessToken, nutritionDataWithUnknownUnit, mockFitbitUserId);
 
@@ -477,7 +484,7 @@ describe('Fitbit API Functions', () => {
             });
 
             const logFoodParams = new URLSearchParams({
-                foodId: 'mockFoodId', // beforeEach の mockImplementation で設定された foodId
+                foodId: 'mockFoodId_Unknown',
                 mealTypeId: '1',
                 unitId: '86', // Default unitId
                 amount: '1',

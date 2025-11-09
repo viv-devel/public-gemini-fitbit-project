@@ -103,7 +103,9 @@ export async function processAndLogFoods(accessToken, nutritionData, fitbitUserI
         throw new ValidationError('Invalid input: "foods" array is missing or empty.');
     }
 
-    const logPromises = nutritionData.foods.map(async (food) => {
+    // フェーズ1: 全ての食品をFitbitに「作成」する (直列実行)
+    const createdFoods = [];
+    for (const food of nutritionData.foods) {
         if (!food.foodName || !food.amount || !food.unit) {
             throw new ValidationError(`Missing required field for food log: ${food.foodName || 'Unknown Food'}.`);
         }
@@ -115,7 +117,7 @@ export async function processAndLogFoods(accessToken, nutritionData, fitbitUserI
         createFoodParams.append('defaultFoodMeasurementUnitId', unitId);
         createFoodParams.append('defaultServingSize', food.amount);
         createFoodParams.append('calories', Math.round(food.calories || 0));
-        
+
         createFoodParams.append('formType', food.formType || 'DRY');
         createFoodParams.append('description', food.description || `Logged via Gemini: ${food.foodName}`);
 
@@ -172,12 +174,18 @@ export async function processAndLogFoods(accessToken, nutritionData, fitbitUserI
             throw new FitbitApiError(`Failed to create food "${food.foodName}": ${errorMessage}`);
         }
         const foodId = createFoodResult.food.foodId; // パース済みの結果を使用
+        console.log(`Successfully created food: ${food.foodName} (Food ID: ${foodId})`);
+        createdFoods.push({ ...food, foodId, unitId });
+    }
 
+    // フェーズ2: 作成した全ての食品を「ログ記録」する (直列実行)
+    const logResults = [];
+    for (const createdFood of createdFoods) {
         const logFoodParams = new URLSearchParams({
-            foodId: foodId,
+            foodId: createdFood.foodId,
             mealTypeId: mealTypeId,
-            unitId: unitId,
-            amount: food.amount,
+            unitId: createdFood.unitId,
+            amount: createdFood.amount,
             date: nutritionData.log_date,
             time: nutritionData.log_time,
         }).toString();
@@ -192,12 +200,13 @@ export async function processAndLogFoods(accessToken, nutritionData, fitbitUserI
             const errorData = await logFoodResponse.json();
             console.error('Fitbit log food error response:', errorData);
             const errorMessage = errorData.errors && errorData.errors[0] ? errorData.errors[0].message : 'Unknown error';
-            throw new FitbitApiError(`Failed to log food "${food.foodName}": ${errorMessage}`);
+            throw new FitbitApiError(`Failed to log food "${createdFood.foodName}": ${errorMessage}`);
         }
 
-        console.log(`Successfully logged food: ${food.foodName} for user ${fitbitUserId}`);
-        return await logFoodResponse.json();
-    });
+        const logResult = await logFoodResponse.json();
+        console.log(`Successfully logged food: ${createdFood.foodName} for user ${fitbitUserId}`);
+        logResults.push(logResult);
+    }
 
-    return Promise.all(logPromises);
+    return logResults;
 }
