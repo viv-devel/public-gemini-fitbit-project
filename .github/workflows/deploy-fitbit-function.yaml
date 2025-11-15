@@ -15,7 +15,6 @@ concurrency:
 
 env:
   FUNCTION_NAME: fitbit-auth-webhook
-  FUNCTION_REGION: asia-northeast1
   SOURCE_DIR: fitbit-api-logic
 
 jobs:
