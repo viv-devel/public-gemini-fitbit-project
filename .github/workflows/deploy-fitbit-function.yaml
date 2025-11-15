@@ -48,14 +48,15 @@ jobs:
         run: |
           gcloud functions deploy ${{ env.FUNCTION_NAME }} \
             --gen2 \
-            --region=${{ env.FUNCTION_REGION }} \
+            --region=${{ secrets.FUNCTION_REGION }} \
             --runtime=nodejs20 \
             --source=${{ env.SOURCE_DIR }} \
             --entry-point=fitbitWebhookHandler \
             --trigger-http \
             --allow-unauthenticated \
-            --set-env-vars=GCP_PROJECT=${{ secrets.PROJECT_ID }},FITBIT_REDIRECT_URI=${{ secrets.FITBIT_REDIRECT_URI }},FUNCTION_REGION=${{ secrets.FUNCTION_REGION }} \
-            --project=${{ secrets.PROJECT_ID }}
+            --set-env-vars="GCP_PROJECT=${{ secrets.PROJECT_ID }},FITBIT_REDIRECT_URI=${{ secrets.FITBIT_REDIRECT_URI }},FUNCTION_REGION=${{ secrets.FUNCTION_REGION }}" \
+            --project=${{ secrets.PROJECT_ID }} \
+            --clear-secrets
 
       - name: Discord Notification
         if: always()
@@ -97,14 +98,15 @@ jobs:
         run: |
           gcloud functions deploy ${{ env.FUNCTION_NAME }} \
             --gen2 \
-            --region=${{ env.FUNCTION_REGION }} \
+            --region=${{ secrets.FUNCTION_REGION }} \
             --runtime=nodejs20 \
             --source=${{ env.SOURCE_DIR }} \
             --entry-point=fitbitWebhookHandler \
             --trigger-http \
             --allow-unauthenticated \
-            --set-env-vars=GCP_PROJECT=${{ secrets.PROJECT_ID }},FITBIT_REDIRECT_URI=${{ secrets.FITBIT_REDIRECT_URI }},FUNCTION_REGION=${{ secrets.FUNCTION_REGION }} \
-            --project=${{ secrets.PROJECT_ID }}
+            --set-env-vars="GCP_PROJECT=${{ secrets.PROJECT_ID }},FITBIT_REDIRECT_URI=${{ secrets.FITBIT_REDIRECT_URI }},FUNCTION_REGION=${{ secrets.FUNCTION_REGION }}" \
+            --project=${{ secrets.PROJECT_ID }} \
+            --clear-secrets
 
       - name: Discord Notification
         if: always()
