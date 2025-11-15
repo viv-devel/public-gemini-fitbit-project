@@ -55,7 +55,7 @@ jobs:
             --trigger-http \
             --allow-unauthenticated \
             --update-secrets=FITBIT_CLIENT_ID=projects/${{ secrets.PROJECT_ID }}/secrets/FITBIT_CLIENT_ID/versions/latest,FITBIT_CLIENT_SECRET=projects/${{ secrets.PROJECT_ID }}/secrets/FITBIT_CLIENT_SECRET/versions/latest \
-            --set-env-vars=GCP_PROJECT=${{ secrets.PROJECT_ID }},FITBIT_REDIRECT_URI=${{ secrets.FITBIT_REDIRECT_URI }},FUNCTION_REGION=${{ env.FUNCTION_REGION }} \
+            --set-env-vars=GCP_PROJECT=${{ secrets.PROJECT_ID }},FITBIT_REDIRECT_URI=${{ secrets.FITBIT_REDIRECT_URI }},FUNCTION_REGION=${{ secrets.FUNCTION_REGION }} \
             --project=${{ secrets.PROJECT_ID }}
 
       - name: Discord Notification
@@ -105,7 +105,7 @@ jobs:
             --trigger-http \
             --allow-unauthenticated \
             --update-secrets=FITBIT_CLIENT_ID=projects/${{ secrets.PROJECT_ID }}/secrets/FITBIT_CLIENT_ID/versions/latest,FITBIT_CLIENT_SECRET=projects/${{ secrets.PROJECT_ID }}/secrets/FITBIT_CLIENT_SECRET/versions/latest \
-            --set-env-vars=GCP_PROJECT=${{ secrets.PROJECT_ID }},FITBIT_REDIRECT_URI=${{ secrets.FITBIT_REDIRECT_URI }},FUNCTION_REGION=${{ env.FUNCTION_REGION }} \
+            --set-env-vars=GCP_PROJECT=${{ secrets.PROJECT_ID }},FITBIT_REDIRECT_URI=${{ secrets.FITBIT_REDIRECT_URI }},FUNCTION_REGION=${{ secrets.FUNCTION_REGION }} \
             --project=${{ secrets.PROJECT_ID }}
 
       - name: Discord Notification
