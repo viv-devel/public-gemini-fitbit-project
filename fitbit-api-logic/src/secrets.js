@@ -1,6 +1,8 @@
 import { SecretManagerServiceClient } from '@google-cloud/secret-manager';
 
-const secretManagerClient = new SecretManagerServiceClient();
+const secretManagerClient = new SecretManagerServiceClient({
+    apiEndpoint: 'asia-northeast1-secretmanager.googleapis.com',
+});
 
 /**
  * Google Secret Managerからシークレットにアクセスします。
