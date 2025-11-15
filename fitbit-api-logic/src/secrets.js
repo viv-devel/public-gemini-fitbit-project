@@ -1,7 +1,9 @@
 import { SecretManagerServiceClient } from '@google-cloud/secret-manager';
 
+const FUNCTION_REGION = process.env.FUNCTION_REGION; // FUNCTION_REGION を取得
+
 const secretManagerClient = new SecretManagerServiceClient({
-    apiEndpoint: 'asia-northeast1-secretmanager.googleapis.com',
+    apiEndpoint: `secretmanager.${FUNCTION_REGION}.rep.googleapis.com`,
 });
 
 /**
