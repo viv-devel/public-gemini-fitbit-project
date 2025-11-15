@@ -22,8 +22,11 @@ export const fitbitWebhookHandler = async (req, res) => {
 
     // アプリケーション認証情報用のSecret Managerシークレット名
     const PROJECT_ID = process.env.GCP_PROJECT;
-    const FITBIT_CLIENT_ID_NAME = `projects/${PROJECT_ID}/secrets/FITBIT_CLIENT_ID/versions/latest`;
-    const FITBIT_CLIENT_SECRET_NAME = `projects/${PROJECT_ID}/secrets/FITBIT_CLIENT_SECRET/versions/latest`;
+    const FUNCTION_REGION = process.env.FUNCTION_REGION; // FUNCTION_REGION を取得
+
+    // リージョンシークレットの形式でシークレット名を構築
+    const FITBIT_CLIENT_ID_NAME = `projects/${PROJECT_ID}/locations/${FUNCTION_REGION}/secrets/FITBIT_CLIENT_ID/versions/latest`;
+    const FITBIT_CLIENT_SECRET_NAME = `projects/${PROJECT_ID}/locations/${FUNCTION_REGION}/secrets/FITBIT_CLIENT_SECRET/versions/latest`;
 
     res.set('Access-Control-Allow-Origin', '*');
     res.set('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
