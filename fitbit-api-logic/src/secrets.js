@@ -1,6 +1,10 @@
 import { SecretManagerServiceClient } from '@google-cloud/secret-manager';
 
-const secretManagerClient = new SecretManagerServiceClient();
+const FUNCTION_REGION = process.env.FUNCTION_REGION; // FUNCTION_REGION を取得
+
+const secretManagerClient = new SecretManagerServiceClient({
+    apiEndpoint: `secretmanager.${FUNCTION_REGION}.rep.googleapis.com`,
+});
 
 /**
  * Google Secret Managerからシークレットにアクセスします。
