@@ -40,18 +40,18 @@ export const fitbitWebhookHandler = async (req, res) => {
     return res.status(204).send("");
   }
 
+  // Health Check: codeパラメータがない単純なGETリクエスト
+  if (req.method === "GET" && !req.query.code) {
+    return res
+      .status(200)
+      .json({ status: "OK", message: "Health check passed" });
+  }
+
   try {
     const [clientId, clientSecret] = await Promise.all([
       accessSecretVersion(FITBIT_CLIENT_ID_NAME),
       accessSecretVersion(FITBIT_CLIENT_SECRET_NAME),
     ]);
-
-    // Health Check: codeパラメータがない単純なGETリクエスト
-    if (req.method === "GET" && !req.query.code) {
-      return res
-        .status(200)
-        .json({ status: "OK", message: "Health check passed" });
-    }
 
     // OAuthコールバック: 認証コードをトークンと交換
     if (req.method === "GET" && req.query.code) {
