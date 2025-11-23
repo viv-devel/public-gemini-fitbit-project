@@ -176,7 +176,7 @@ describe("fitbitWebhookHandler", () => {
         status: "OK",
         message: "Health check passed",
       });
-      expect(accessSecretVersion).toHaveBeenCalledTimes(2); // シークレット取得は行われる
+      expect(accessSecretVersion).not.toHaveBeenCalled(); // シークレット取得は行われない
     });
   });
 
