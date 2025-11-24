@@ -8,7 +8,9 @@
     "start": "functions-framework --target=fitbitWebhookHandler",
     "test": "cross-env GCP_PROJECT=test-project FITBIT_REDIRECT_URI=http://localhost:3000/oauth jest",
     "test:coverage": "cross-env GCP_PROJECT=test-project FITBIT_REDIRECT_URI=http://localhost:3000/oauth jest --coverage",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "migrate:dry-run": "cross-env DRY_RUN=true node scripts/migrate-tokens.js",
+    "migrate:prod": "node scripts/migrate-tokens.js"
   },
   "dependencies": {
     "@google-cloud/functions-framework": "^3.0.0",
