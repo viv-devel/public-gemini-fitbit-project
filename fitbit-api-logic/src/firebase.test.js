@@ -38,7 +38,6 @@ jest.mock("firebase-admin", () => {
     initializeApp: jest.fn(),
     apps: [],
     auth: jest.fn(() => mockAuth),
-    firestore: jest.fn(() => mockFirestore),
     firestore: Object.assign(
       jest.fn(() => mockFirestore),
       {

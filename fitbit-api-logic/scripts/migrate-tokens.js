@@ -19,6 +19,15 @@
 
 import admin from "firebase-admin";
 
+// 環境変数の検証
+if (!process.env.GCP_PROJECT) {
+  console.error("エラー: 実行には環境変数 GCP_PROJECT が必要です。");
+  console.error(
+    "使用方法: GCP_PROJECT=your-project-id node scripts/migrate-tokens.js"
+  );
+  process.exit(1);
+}
+
 // Firebase Admin SDKを初期化
 if (admin.apps.length === 0) {
   admin.initializeApp({
